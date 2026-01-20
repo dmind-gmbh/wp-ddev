@@ -54,6 +54,7 @@ fi
 # ---------------------------------------------------------
 # PART 1: Interactive Setup & Persistence
 # ---------------------------------------------------------
+
 echo -e "${CYAN}>> Configuration Check${NC}"
 
 VARS_UPDATED=false
@@ -62,7 +63,7 @@ VARS_UPDATED=false
 ensure_var() {
     local var_name="$1"
     local prompt_text="$2"
-    local current_val="${!var_name:-}"
+    local current_val="${!var_name:-""}"
     local is_secret="${3:-false}"
 
     if [ -z "$current_val" ]; then
@@ -101,16 +102,38 @@ if [ -z "${SOURCE_DOMAINS:-}" ]; then
     VARS_UPDATED=true
 fi
 
-# Check for Prompt Settings
+# Check for Prompt Settings (Ignores)
 if [ -z "${IGNORE_FILES_PROMPT:-}" ]; then
     export IGNORE_FILES_PROMPT="i"
     update_env "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
 fi
 
 if [ -z "${IGNORED_FILES:-}" ]; then
-     export IGNORED_FILES="*.pdf,*.zip"
-     update_env "IGNORED_FILES" "*.pdf,*.zip" "Default file types to ignore"
+     # Files defaults
+     DEFAULT_FILES="*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log"
+     export IGNORED_FILES="$DEFAULT_FILES"
+     update_env "IGNORED_FILES" "$DEFAULT_FILES" "Default file patterns to ignore"
 fi
+
+if [ -z "${IGNORED_DIRS:-}" ]; then
+     # Dirs defaults
+     DEFAULT_DIRS="wp-content/cache/,wp-content/backups/,wp-content/updraft/,wp-content/ai1wm-backups/,node_modules/,wp-snapshots/"
+     export IGNORED_DIRS="$DEFAULT_DIRS"
+     update_env "IGNORED_DIRS" "$DEFAULT_DIRS" "Default directories to ignore"
+fi
+
+# Check for File Size Limit Settings
+if [ -z "${MAX_SIZE_PROMPT:-}" ]; then
+    export MAX_SIZE_PROMPT="i"
+    update_env "MAX_SIZE_PROMPT" "i" "y=use default size limit, n=no limit, i=interactive"
+fi
+
+if [ -z "${RSYNC_MAX_SIZE:-}" ]; then
+    # Default to 0 (infinite)
+    export RSYNC_MAX_SIZE="0"
+    update_env "RSYNC_MAX_SIZE" "0" "Max file size in MB (0 = no limit)"
+fi
+
 
 if [ "$VARS_UPDATED" = true ]; then
     echo -e "${GREEN}Configuration saved to ${ENV_FILE}.${NC}"
@@ -121,23 +144,50 @@ fi
 # PART 2: Runtime Prompts
 # ---------------------------------------------------------
 
-# File Ignores Logic
-DEFAULT_IGNORES="${IGNORED_FILES}"
+# 1. File Ignores Logic
+DEFAULT_FILES="${IGNORED_FILES}"
+DEFAULT_DIRS="${IGNORED_DIRS}"
 PROMPT_IGN_VAL="${IGNORE_FILES_PROMPT}"
 
 if [ "$PROMPT_IGN_VAL" == "i" ]; then
-    echo -e "${YELLOW}Default file types to ignore: ${DEFAULT_IGNORES}${NC}"
-    read -p "Enter file types to ignore (comma separated) [${DEFAULT_IGNORES}]: " USER_IGNORES
-    FINAL_IGNORES="${USER_IGNORES:-$DEFAULT_IGNORES}"
+    # Prompt for Files
+    echo -e "${YELLOW}Default file patterns: ${DEFAULT_FILES}${NC}"
+    read -p "Enter patterns to ignore (comma separated) [${DEFAULT_FILES}]: " USER_FILES
+    FINAL_FILES="${USER_FILES:-$DEFAULT_FILES}"
+    
+    # Prompt for Dirs
+    echo -e "${YELLOW}Default directories: ${DEFAULT_DIRS}${NC}"
+    read -p "Enter directories to ignore (comma separated) [${DEFAULT_DIRS}]: " USER_DIRS
+    FINAL_DIRS="${USER_DIRS:-$DEFAULT_DIRS}"
+    
 elif [ "$PROMPT_IGN_VAL" == "y" ]; then
-    echo -e "${BLUE}Auto-accepting default ignores: ${DEFAULT_IGNORES}${NC}"
-    FINAL_IGNORES="$DEFAULT_IGNORES"
+    echo -e "${BLUE}Auto-accepting default ignores.${NC}"
+    FINAL_FILES="$DEFAULT_FILES"
+    FINAL_DIRS="$DEFAULT_DIRS"
 else
     echo -e "${BLUE}Ignore list disabled by configuration.${NC}"
-    FINAL_IGNORES=""
+    FINAL_FILES=""
+    FINAL_DIRS=""
 fi
 
-# wp-config Logic
+# 2. File Size Limit Logic
+DEFAULT_SIZE="${RSYNC_MAX_SIZE:-0}"
+PROMPT_SIZE_VAL="${MAX_SIZE_PROMPT:-i}"
+FINAL_SIZE="0"
+
+if [ "$PROMPT_SIZE_VAL" == "i" ]; then
+    echo -e "${YELLOW}Default max file size: ${DEFAULT_SIZE} MB (0 = no limit)${NC}"
+    read -p "Enter max file size in MB [${DEFAULT_SIZE}]: " USER_SIZE
+    FINAL_SIZE="${USER_SIZE:-$DEFAULT_SIZE}"
+elif [ "$PROMPT_SIZE_VAL" == "y" ]; then
+    echo -e "${BLUE}Using configured max size: ${DEFAULT_SIZE} MB${NC}"
+    FINAL_SIZE="$DEFAULT_SIZE"
+else
+    echo -e "${BLUE}File size limit disabled (no limit).${NC}"
+    FINAL_SIZE="0"
+fi
+
+# 3. wp-config Logic
 DO_EDIT_CONFIG="n"
 WP_CONFIG_MISSING=false
 if [ ! -e /var/www/html/${DDEV_DOCROOT}/wp-config.php ]; then
@@ -186,14 +236,14 @@ set -eu -o pipefail
 echo -e "${BLUE}Dumping remote database...${NC}"
 
 # Use HEREDOC to execute clean remote commands without quoting hell
-ssh "${SSH_USER}"@"${SSH_HOST}" "bash -s" <<EOF
+ssh ${SSH_USER}@${SSH_HOST} "bash -s" <<EOF
 set -eu -o pipefail
 mysqldump -u'$DB_USER' -h'$DB_HOST' -p'$DB_PASSWORD' '$DB_NAME' $SED_CMD | gzip > '$SERVER_ROOT'/db.sql.gz
 EOF
 
 echo -e "${BLUE}Downloading dump...${NC}"
-rsync -az "${SSH_USER}"@"${SSH_HOST}:${SERVER_ROOT}/db.sql.gz" "/var/www/html/.ddev/.downloads"
-ssh "${SSH_USER}"@"${SSH_HOST}" "rm '${SERVER_ROOT}'/db.sql.gz"
+rsync -az ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz /var/www/html/.ddev/.downloads
+ssh ${SSH_USER}@${SSH_HOST} "rm '${SERVER_ROOT}'/db.sql.gz"
 
 echo -e "${GREEN}Database sync complete!${NC}"
 echo ""
@@ -201,8 +251,10 @@ echo ""
 # Files Sync
 echo -e "${CYAN}>> Phase 2: Files Sync${NC}"
 EXCLUDE_FLAGS=""
-if [ -n "$FINAL_IGNORES" ]; then
-    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_IGNORES"
+
+# Process Files
+if [ -n "$FINAL_FILES" ]; then
+    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_FILES"
     for item in "${IGNORE_LIST[@]}"; do
         item=$(echo "$item" | xargs)
         if [ -n "$item" ]; then
@@ -211,23 +263,40 @@ if [ -n "$FINAL_IGNORES" ]; then
     done
 fi
 
+# Process Dirs
+if [ -n "$FINAL_DIRS" ]; then
+    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_DIRS"
+    for item in "${IGNORE_LIST[@]}"; do
+        item=$(echo "$item" | xargs)
+        if [ -n "$item" ]; then
+            EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude '$item'"
+        fi
+    done
+fi
+
+# Add Max Size Limit if set
+if [ "$FINAL_SIZE" -gt 0 ]; then
+    echo -e "${BLUE}Applying file size limit: ${FINAL_SIZE} MB${NC}"
+    EXCLUDE_FLAGS="$EXCLUDE_FLAGS --max-size=${FINAL_SIZE}m"
+fi
+
 echo -e "${BLUE}Syncing files...${NC}"
 if [ "$WP_CONFIG_MISSING" = false ]; then
     echo -e "${BLUE}Existing installation detected. Syncing only wp-content/uploads and languages...${NC}"
-    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}"@"${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" "/var/www/html/${DDEV_DOCROOT}/wp-content/uploads"
-    eval rsync -chavzP --exclude '*.zip' "${SSH_USER}"@"${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" "/var/www/html/${DDEV_DOCROOT}/wp-content/languages"
+    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
+    eval rsync -chavzP --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
 else
     echo -e "${BLUE}Fresh installation detected. Syncing entire root...${NC}"
-    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}"@"${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" "/var/www/html/${DDEV_DOCROOT}"
+    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
     
     if [ "$DO_EDIT_CONFIG" == "y" ]; then
         echo -e "${YELLOW}Editing wp-config.php...${NC}"
-        sed -ir "s/define\s*(\s*'DB_NAME'\s*,\s*'$DB_NAME'\s*);/define( 'DB_NAME', 'db' );/" "/var/www/html/${DDEV_DOCROOT}/wp-config.php"
-        sed -ir "s/define\s*(\s*'DB_USER'\s*,\s*'$DB_USER'\s*);/define( 'DB_USER', 'db' );/" "/var/www/html/${DDEV_DOCROOT}/wp-config.php"
-        sed -ir "s/define\s*(\s*'DB_PASSWORD'\s*,\s*'[^']*'\s*);/define( 'DB_PASSWORD', 'db' );/" "/var/www/html/${DDEV_DOCROOT}/wp-config.php"
-        sed -ir "s/define\s*(\s*'DB_HOST'\s*,\s*'$DB_HOST'\s*);/define( 'DB_HOST', 'db' );/" "/var/www/html/${DDEV_DOCROOT}/wp-config.php"
+        sed -ir "s/define\s*(\s*'DB_NAME'\s*,\s*'$DB_NAME'\s*);/define( 'DB_NAME', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_USER'\s*,\s*'$DB_USER'\s*);/define( 'DB_USER', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_PASSWORD'\s*,\s*'[^']*'\s*);/define( 'DB_PASSWORD', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_HOST'\s*,\s*'$DB_HOST'\s*);/define( 'DB_HOST', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
         
-        sed -ir "s|<?php|<?php\ndefine( 'WP_HOME', '$DDEV_PRIMARY_URL' );\ndefine( 'WP_SITEURL', '$DDEV_PRIMARY_URL' );|" "/var/www/html/${DDEV_DOCROOT}/wp-config.php"
+        sed -ir "s|<?php|<?php\ndefine( 'WP_HOME', '$DDEV_PRIMARY_URL' );\ndefine( 'WP_SITEURL', '$DDEV_PRIMARY_URL' );|" /var/www/html/${DDEV_DOCROOT}/wp-config.php
         echo -e "${GREEN}wp-config.php updated.${NC}"
     fi
 fi
