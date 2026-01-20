@@ -1,5 +1,8 @@
 name: interactive-ssh-pull
-version: v1.0.0
+version: v1.1.0
 project_files:
   - providers/dev.yaml
+  - providers/stage.yaml
+  - providers/live.yaml
+  - providers/pull_script.sh
   - config.uploads.yaml

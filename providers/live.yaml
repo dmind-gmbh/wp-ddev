@@ -1,4 +1,4 @@
-# Usage: `ddev pull dev`
+# Usage: `ddev pull live`
 auth_command:
   command: |
     set -eu -o pipefail
@@ -13,5 +13,5 @@ db_pull_command:
   skip_import: true
   service: web
   command: |
-    export PULL_ENV="dev"
+    export PULL_ENV="live"
     bash /var/www/html/.ddev/providers/pull_script.sh
