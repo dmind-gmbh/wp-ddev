@@ -55,7 +55,6 @@ fi
 # ---------------------------------------------------------
 # PART 1: Interactive Setup & Persistence
 # ---------------------------------------------------------
-
 echo -e "${CYAN}>> Configuration Check${NC}"
 
 VARS_UPDATED=false
@@ -87,6 +86,16 @@ ensure_var() {
 
 ensure_var "SSH_USER" "Enter SSH Username (e.g. user-123):"
 ensure_var "SSH_HOST" "Enter SSH Host (e.g. example.com):"
+
+# SSH Port Handling
+if [ -z "${SSH_PORT:-}" ]; then
+    read -p "Enter SSH Port [22]: " INPUT_PORT
+    SSH_PORT="${INPUT_PORT:-22}"
+    export SSH_PORT
+    update_env "SSH_PORT" "$SSH_PORT" "Remote SSH Port"
+    VARS_UPDATED=true
+fi
+
 ensure_var "SERVER_ROOT" "Enter Remote Server Root Path:"
 ensure_var "DATA_DIR" "Enter Remote Data Directory (relative to root, usually /):"
 ensure_var "DB_NAME" "Enter Remote Database Name:"
@@ -103,38 +112,16 @@ if [ -z "${SOURCE_DOMAINS:-}" ]; then
     VARS_UPDATED=true
 fi
 
-# Check for Prompt Settings (Ignores)
+# Check for Prompt Settings
 if [ -z "${IGNORE_FILES_PROMPT:-}" ]; then
     export IGNORE_FILES_PROMPT="i"
     update_env "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
 fi
 
 if [ -z "${IGNORED_FILES:-}" ]; then
-     # Files defaults
-     DEFAULT_FILES="*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log"
-     export IGNORED_FILES="$DEFAULT_FILES"
-     update_env "IGNORED_FILES" "$DEFAULT_FILES" "Default file patterns to ignore"
+     export IGNORED_FILES="*.pdf,*.zip"
+     update_env "IGNORED_FILES" "*.pdf,*.zip" "Default file types to ignore"
 fi
-
-if [ -z "${IGNORED_DIRS:-}" ]; then
-     # Dirs defaults
-     DEFAULT_DIRS="wp-content/cache/,wp-content/backups/,wp-content/updraft/,wp-content/ai1wm-backups/,node_modules/,wp-snapshots/"
-     export IGNORED_DIRS="$DEFAULT_DIRS"
-     update_env "IGNORED_DIRS" "$DEFAULT_DIRS" "Default directories to ignore"
-fi
-
-# Check for File Size Limit Settings
-if [ -z "${MAX_SIZE_PROMPT:-}" ]; then
-    export MAX_SIZE_PROMPT="i"
-    update_env "MAX_SIZE_PROMPT" "i" "y=use default size limit, n=no limit, i=interactive"
-fi
-
-if [ -z "${RSYNC_MAX_SIZE:-}" ]; then
-    # Default to 0 (infinite)
-    export RSYNC_MAX_SIZE="0"
-    update_env "RSYNC_MAX_SIZE" "0" "Max file size in MB (0 = no limit)"
-fi
-
 
 if [ "$VARS_UPDATED" = true ]; then
     echo -e "${GREEN}Configuration saved to ${ENV_FILE}.${NC}"
@@ -145,50 +132,23 @@ fi
 # PART 2: Runtime Prompts
 # ---------------------------------------------------------
 
-# 1. File Ignores Logic
-DEFAULT_FILES="${IGNORED_FILES}"
-DEFAULT_DIRS="${IGNORED_DIRS}"
+# File Ignores Logic
+DEFAULT_IGNORES="${IGNORED_FILES}"
 PROMPT_IGN_VAL="${IGNORE_FILES_PROMPT}"
 
 if [ "$PROMPT_IGN_VAL" == "i" ]; then
-    # Prompt for Files
-    echo -e "${YELLOW}Default file patterns: ${DEFAULT_FILES}${NC}"
-    read -p "Enter patterns to ignore (comma separated) [${DEFAULT_FILES}]: " USER_FILES
-    FINAL_FILES="${USER_FILES:-$DEFAULT_FILES}"
-    
-    # Prompt for Dirs
-    echo -e "${YELLOW}Default directories: ${DEFAULT_DIRS}${NC}"
-    read -p "Enter directories to ignore (comma separated) [${DEFAULT_DIRS}]: " USER_DIRS
-    FINAL_DIRS="${USER_DIRS:-$DEFAULT_DIRS}"
-    
+    echo -e "${YELLOW}Default file types to ignore: ${DEFAULT_IGNORES}${NC}"
+    read -p "Enter file types to ignore (comma separated) [${DEFAULT_IGNORES}]: " USER_IGNORES
+    FINAL_IGNORES="${USER_IGNORES:-$DEFAULT_IGNORES}"
 elif [ "$PROMPT_IGN_VAL" == "y" ]; then
-    echo -e "${BLUE}Auto-accepting default ignores.${NC}"
-    FINAL_FILES="$DEFAULT_FILES"
-    FINAL_DIRS="$DEFAULT_DIRS"
+    echo -e "${BLUE}Auto-accepting default ignores: ${DEFAULT_IGNORES}${NC}"
+    FINAL_IGNORES="$DEFAULT_IGNORES"
 else
     echo -e "${BLUE}Ignore list disabled by configuration.${NC}"
-    FINAL_FILES=""
-    FINAL_DIRS=""
+    FINAL_IGNORES=""
 fi
 
-# 2. File Size Limit Logic
-DEFAULT_SIZE="${RSYNC_MAX_SIZE:-0}"
-PROMPT_SIZE_VAL="${MAX_SIZE_PROMPT:-i}"
-FINAL_SIZE="0"
-
-if [ "$PROMPT_SIZE_VAL" == "i" ]; then
-    echo -e "${YELLOW}Default max file size: ${DEFAULT_SIZE} MB (0 = no limit)${NC}"
-    read -p "Enter max file size in MB [${DEFAULT_SIZE}]: " USER_SIZE
-    FINAL_SIZE="${USER_SIZE:-$DEFAULT_SIZE}"
-elif [ "$PROMPT_SIZE_VAL" == "y" ]; then
-    echo -e "${BLUE}Using configured max size: ${DEFAULT_SIZE} MB${NC}"
-    FINAL_SIZE="$DEFAULT_SIZE"
-else
-    echo -e "${BLUE}File size limit disabled (no limit).${NC}"
-    FINAL_SIZE="0"
-fi
-
-# 3. wp-config Logic
+# wp-config Logic
 DO_EDIT_CONFIG="n"
 WP_CONFIG_MISSING=false
 if [ ! -e /var/www/html/${DDEV_DOCROOT}/wp-config.php ]; then
@@ -218,7 +178,7 @@ echo ""
 
 # DB Sync
 echo -e "${CYAN}>> Phase 1: Database Sync${NC}"
-echo -e "${BLUE}Preparing to pull database from ${SSH_HOST}...${NC}"
+echo -e "${BLUE}Preparing to pull database from ${SSH_HOST}:${SSH_PORT}...${NC}"
 
 SED_CMD=""
 if [ -n "${SOURCE_DOMAINS:-}" ]; then
@@ -237,14 +197,16 @@ set -eu -o pipefail
 echo -e "${BLUE}Dumping remote database...${NC}"
 
 # Use HEREDOC to execute clean remote commands without quoting hell
-ssh ${SSH_USER}@${SSH_HOST} "bash -s" <<EOF
+# Added -p for SSH port
+ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "bash -s" <<EOF
 set -eu -o pipefail
 mysqldump -u'$DB_USER' -h'$DB_HOST' -p'$DB_PASSWORD' '$DB_NAME' $SED_CMD | gzip > '$SERVER_ROOT'/db.sql.gz
 EOF
 
 echo -e "${BLUE}Downloading dump...${NC}"
-rsync -az ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz /var/www/html/.ddev/.downloads
-ssh ${SSH_USER}@${SSH_HOST} "rm '${SERVER_ROOT}'/db.sql.gz"
+# Added -e "ssh -p PORT" for rsync
+rsync -az -e "ssh -p ${SSH_PORT}" ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz /var/www/html/.ddev/.downloads
+ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "rm '${SERVER_ROOT}'/db.sql.gz"
 
 echo -e "${GREEN}Database sync complete!${NC}"
 echo ""
@@ -252,43 +214,24 @@ echo ""
 # Files Sync
 echo -e "${CYAN}>> Phase 2: Files Sync${NC}"
 EXCLUDE_FLAGS=""
-
-# Process Files
-if [ -n "$FINAL_FILES" ]; then
-    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_FILES"
+if [ -n "$FINAL_IGNORES" ]; then
+    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_IGNORES"
     for item in "${IGNORE_LIST[@]}"; do
         item=$(echo "$item" | xargs)
         if [ -n "$item" ]; then
             EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude '$item'"
         fi
     done
-fi
-
-# Process Dirs
-if [ -n "$FINAL_DIRS" ]; then
-    IFS=',' read -ra IGNORE_LIST <<< "$FINAL_DIRS"
-    for item in "${IGNORE_LIST[@]}"; do
-        item=$(echo "$item" | xargs)
-        if [ -n "$item" ]; then
-            EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude '$item'"
-        fi
-    done
-fi
-
-# Add Max Size Limit if set
-if [ "$FINAL_SIZE" -gt 0 ]; then
-    echo -e "${BLUE}Applying file size limit: ${FINAL_SIZE} MB${NC}"
-    EXCLUDE_FLAGS="$EXCLUDE_FLAGS --max-size=${FINAL_SIZE}m"
 fi
 
 echo -e "${BLUE}Syncing files...${NC}"
 if [ "$WP_CONFIG_MISSING" = false ]; then
     echo -e "${BLUE}Existing installation detected. Syncing only wp-content/uploads and languages...${NC}"
-    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
-    eval rsync -chavzP --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
+    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
+    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
 else
     echo -e "${BLUE}Fresh installation detected. Syncing entire root...${NC}"
-    eval rsync -chavzP $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
+    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
     
     if [ "$DO_EDIT_CONFIG" == "y" ]; then
         echo -e "${YELLOW}Editing wp-config.php...${NC}"
