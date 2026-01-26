@@ -6,3 +6,70 @@ project_files:
   - providers/live.yaml
   - providers/pull_script.sh
   - config.uploads.yaml
+
+pre_install_actions:
+  - |
+    #!/bin/bash
+    # Migration Script for Legacy DDEV Providers
+    
+    migrate_env() {
+        local env_name="$1"
+        local dest_file=".env.${env_name}"
+        # Fallback for dev: if .env.dev doesn't exist, use .env (unless .env.dev is preferred)
+        # Our script uses .env.dev, but falls back to .env.
+        # Let's write to .env.dev to be explicit and modern.
+        
+        shift
+        local sources=($@)
+
+        for src in "${sources[@]}"; do
+            local src_path=".ddev/providers/${src}"
+            if [ -f "$src_path" ]; then
+                if grep -q "environment_variables:" "$src_path"; then
+                    echo "Found legacy configuration in ${src_path}. Migrating to ${dest_file}..."
+                    
+                    # Ensure dest file exists
+                    touch "$dest_file"
+                    
+                    # Helper to extract and save
+                    extract_save() {
+                        local old_key="$1"
+                        local new_key="$2"
+                        # awk to get value after colon, tr to strip quotes and spaces
+                        local val=$(grep "^	*${old_key}:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
+                        
+                        if [ -n "$val" ]; then
+                            # Check if already set
+                            if ! grep -q "^${new_key}=" "$dest_file"; then
+                                echo "${new_key}=\"${val}\"" >> "$dest_file"
+                            fi
+                        fi
+                    }
+
+                    extract_save "sshuser" "SSH_USER"
+                    extract_save "sshhost" "SSH_HOST"
+                    extract_save "serverroot" "SERVER_ROOT"
+                    extract_save "datadir" "DATA_DIR"
+                    extract_save "dbname" "DB_NAME"
+                    extract_save "dbhost" "DB_HOST"
+                    extract_save "dbuser" "DB_USER"
+                    
+                    # Edit Config mapping
+                    local edit=$(grep "^	*editconf:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
+                    if [[ "$edit" =~ ^[Nn] ]]; then
+                         if ! grep -q "^EDIT_CONFIG=" "$dest_file"; then echo "EDIT_CONFIG=\"n\"" >> "$dest_file"; fi
+                    elif [[ "$edit" =~ ^[Yy] ]]; then
+                         if ! grep -q "^EDIT_CONFIG=" "$dest_file"; then echo "EDIT_CONFIG=\"y\"" >> "$dest_file"; fi
+                    fi
+                    
+                    echo "Migration for ${env_name} complete."
+                    return
+                fi
+            fi
+        done
+    }
+    
+    # Run migrations checks
+    migrate_env "dev" "dev.yaml" "development.yaml" "old.yaml"
+    migrate_env "stage" "stage.yaml" "staging.yaml" "preview.yaml"
+    migrate_env "live" "live.yaml" "prod.yaml" "production.yaml"

@@ -1,4 +1,5 @@
 #!/bin/bash
+#ddev-generated
 set -eu -o pipefail
 
 # Colors

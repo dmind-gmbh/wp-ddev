@@ -1,3 +1,4 @@
+#ddev-generated
 # Usage: `ddev pull dev`
 auth_command:
   command: |

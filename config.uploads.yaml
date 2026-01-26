@@ -1,3 +1,4 @@
+#ddev-generated
 # Automatically sets the upload directory for WordPress projects.
 # This satisfies the requirement for 'ddev pull' file operations.
 upload_dirs: ["wp-content/uploads"]
