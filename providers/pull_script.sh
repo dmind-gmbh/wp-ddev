@@ -55,6 +55,7 @@ fi
 # ---------------------------------------------------------
 # PART 1: Interactive Setup & Persistence
 # ---------------------------------------------------------
+
 echo -e "${CYAN}>> Configuration Check${NC}"
 
 VARS_UPDATED=false
@@ -63,7 +64,7 @@ VARS_UPDATED=false
 ensure_var() {
     local var_name="$1"
     local prompt_text="$2"
-    local current_val="${!var_name:-""}"
+    local current_val="${!var_name:-}"
     local is_secret="${3:-false}"
 
     if [ -z "$current_val" ]; then
@@ -197,14 +198,12 @@ set -eu -o pipefail
 echo -e "${BLUE}Dumping remote database...${NC}"
 
 # Use HEREDOC to execute clean remote commands without quoting hell
-# Added -p for SSH port
 ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "bash -s" <<EOF
 set -eu -o pipefail
 mysqldump -u'$DB_USER' -h'$DB_HOST' -p'$DB_PASSWORD' '$DB_NAME' $SED_CMD | gzip > '$SERVER_ROOT'/db.sql.gz
 EOF
 
 echo -e "${BLUE}Downloading dump...${NC}"
-# Added -e "ssh -p PORT" for rsync
 rsync -az -e "ssh -p ${SSH_PORT}" ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz /var/www/html/.ddev/.downloads
 ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "rm '${SERVER_ROOT}'/db.sql.gz"
 
@@ -227,11 +226,11 @@ fi
 echo -e "${BLUE}Syncing files...${NC}"
 if [ "$WP_CONFIG_MISSING" = false ]; then
     echo -e "${BLUE}Existing installation detected. Syncing only wp-content/uploads and languages...${NC}"
-    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
-    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
 else
     echo -e "${BLUE}Fresh installation detected. Syncing entire root...${NC}"
-    eval rsync -chavzP -e "ssh -p ${SSH_PORT}" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
     
     if [ "$DO_EDIT_CONFIG" == "y" ]; then
         echo -e "${YELLOW}Editing wp-config.php...${NC}"
