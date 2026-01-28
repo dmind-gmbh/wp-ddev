@@ -5,6 +5,33 @@ project_files:
   - providers/stage.yaml
   - providers/live.yaml
   - providers/pull_script.sh
+  - providers/gitignore.template
+
+post_install_actions:
+  - |
+    #!/bin/bash
+    # Generate .gitignore based on docroot
+    
+    # Get docroot from config
+    DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+    
+    # Normalize docroot (add trailing slash if not empty and not just dot)
+    if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then
+        DOCROOT="${DOCROOT}/"
+    else
+        DOCROOT=""
+    fi
+    
+    TEMPLATE=".ddev/providers/gitignore.template"
+    TARGET=".gitignore"
+    
+    if [ ! -f "$TARGET" ]; then
+        echo "Creating .gitignore from template..."
+        sed "s|{{DOCROOT}}|$DOCROOT|g" "$TEMPLATE" > "$TARGET"
+        echo ".gitignore created."
+    else
+        echo ".gitignore already exists. Skipping creation."
+    fi
 
 pre_install_actions:
   - |
