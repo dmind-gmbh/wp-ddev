@@ -1,0 +1,55 @@
+name: 🚀 Deploy via rsync
+
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    name: 🚀 Deploy to server
+    runs-on: ubuntu-latest
+    # environment: {{ENVIRONMENT_NAME}} # Uncomment and set if using GitHub Environments
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      DEST: "{{DESTINATION_PATH}}"
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🔍 Check Secrets
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "::error::Secret SSH_HOST is not set or empty. Please check your Repository Secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then
+            echo "::error::Secret SSH_USER is not set or empty. Please check your Repository Secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_KEY }}" ]; then
+            echo "::error::Secret SSH_KEY is not set or empty. Please check your Repository Secrets."
+            exit 1
+          fi
+
+      - name: 🪪 Set SSH connection
+        run: |
+          mkdir -p ~/.ssh/
+          echo "$SSH_KEY" > ~/.ssh/deploy.key
+          chmod 600 ~/.ssh/deploy.key
+          cat >>~/.ssh/config <<END
+          Host remote
+            HostName ${{ secrets.SSH_HOST }}
+            User ${{ secrets.SSH_USER }}
+            IdentityFile ~/.ssh/deploy.key
+            StrictHostKeyChecking no
+          END
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+
+      - name: 🚀 Sync files
+        run: |
+{{RSYNC_STEPS}}
+        env:
+          SSH_HOST: remote
