@@ -5,175 +5,47 @@ project_files:
   - providers/stage.yaml
   - providers/live.yaml
   - providers/pull_script.sh
-  - providers/gitignore.template
-  - providers/deploy.yml.template
+  - scripts/gitignore_wizard.sh
+  - scripts/setup_wizard.sh
+  - scripts/deploy_wizard.sh
+  - templates/gitignore.template
+  - templates/deploy.yml.template
 
 post_install_actions:
-  - |
-    #!/bin/bash
-    # Generate .gitignore based on docroot
-    
-    # Get docroot from config
-    DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
-    
-    # Normalize docroot (add trailing slash if not empty and not just dot)
-    if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then
-        DOCROOT="${DOCROOT}/"
-    else
-        DOCROOT=""
-    fi
-    
-    TEMPLATE=".ddev/providers/gitignore.template"
-    TARGET=".gitignore"
-    
-    if [ ! -f "$TARGET" ]; then
-        echo "Creating .gitignore from template..."
-        sed "s|{{DOCROOT}}|$DOCROOT|g" "$TEMPLATE" > "$TARGET"
-        echo ".gitignore created."
-    else
-        echo ".gitignore already exists. Skipping creation."
-    fi
-
-  - |
-    #!/bin/bash
-    # Interactive Wizard for GitHub Deployment
-    
-    DEPLOY_FILE=".github/workflows/deploy.yml"
-    TEMPLATE_FILE=".ddev/providers/deploy.yml.template"
-    
-    if [ -f "$DEPLOY_FILE" ]; then
-        echo "Deployment workflow already exists at $DEPLOY_FILE. Skipping."
-        exit 0
-    fi
-    
-    # Prompt user
-    echo ""
-    echo "----------------------------------------------------------------"
-    echo "GitHub Deployment Setup"
-    echo "----------------------------------------------------------------"
-    read -p "Do you want to add a GitHub deployment workflow? [Y/n] " -r
-    REPLY=${REPLY:-Y}
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Skipping GitHub deployment setup."
-        exit 0
-    fi
-    
-    # Ask for Destination Path
-    echo ""
-    echo "Enter the absolute path on the remote server where files should be deployed."
-    echo "Example: /var/www/html/mysite/ or /kunden/12345/webseiten/site"
-    read -p "Destination Path: " DEST_PATH
-    
-    if [ -z "$DEST_PATH" ]; then
-        echo "Destination path is required. Skipping."
-        exit 0
-    fi
-    
-    # Collect Directories
-    STEPS_FILE=$(mktemp)
-    
-    echo ""
-    echo "Define directories to sync."
-    echo "You will specify a local source directory and a remote destination (relative to the Destination Path above)."
-    echo "Enter an empty source path to finish."
-    
-    while true; do
-        echo "---"
-        read -p "Local Source Path (e.g., webroot/wp-content/themes/): " SRC
-        
-        if [ -z "$SRC" ]; then
-            break
-        fi
-        
-        read -p "Remote Relative Destination (leave empty to mirror structure, e.g., webroot/wp-content/themes/): " DEST_REL
-        
-        if [ -z "$DEST_REL" ]; then
-            DEST_REL="$SRC"
-        fi
-        
-        # Build rsync command block and append to temp file
-        echo "          echo \"📦 Deploying ${SRC}...\"" >> "$STEPS_FILE"
-        echo "          rsync -avO \\" >> "$STEPS_FILE"
-        echo "            --exclude /.git/ \\" >> "$STEPS_FILE"
-        echo "            --exclude /.github/ \\" >> "$STEPS_FILE"
-        echo "            -e \"ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy.key\" \\" >> "$STEPS_FILE"
-        echo "            ./${SRC} \\" >> "$STEPS_FILE"
-        echo "            \${{ env.SSH_USER }}@\${{ env.SSH_HOST }}:\${{ env.DEST }}/${DEST_REL}" >> "$STEPS_FILE"
-        echo "" >> "$STEPS_FILE"
-    done
-    
-    # If no steps were added
-    if [ ! -s "$STEPS_FILE" ]; then
-        echo "No directories specified. Generating file with no sync steps."
-        echo "          echo 'No sync steps configured.'" > "$STEPS_FILE"
-    fi
-    
-    # Ensure directory exists
-    mkdir -p ".github/workflows"
-    
-    echo "Configuring deployment..."
-    
-    # Create file from template
-    cp "$TEMPLATE_FILE" "$DEPLOY_FILE"
-    
-    # Replace Destination using perl to handle slashes safely
-    export DEST_PATH
-    perl -i -pe 's|\{\{DESTINATION_PATH\}\}|$ENV{DEST_PATH}|g' "$DEPLOY_FILE"
-    
-    # Replace Steps: Insert content of STEPS_FILE at {{RSYNC_STEPS}} and delete marker
-    sed -i -e "/{{RSYNC_STEPS}}/r $STEPS_FILE" -e "//d" "$DEPLOY_FILE"
-    
-    rm "$STEPS_FILE"
-    
-    echo ""
-    echo "✅ Created $DEPLOY_FILE"
-    echo ""
-    echo "⚠️  IMPORTANT: You must set the following Secrets in your GitHub Repository:"
-    echo "   - SSH_HOST"
-    echo "   - SSH_USER"
-    echo "   - SSH_KEY (Private SSH Key)"
-    echo "----------------------------------------------------------------"
+  - | 
+    # Move to project root (DDEV runs post_install_actions from .ddev/)
+    cd ..
+    # Run wizards
+    bash .ddev/scripts/gitignore_wizard.sh
+    bash .ddev/scripts/setup_wizard.sh
+    bash .ddev/scripts/deploy_wizard.sh
 
 pre_install_actions:
-  - |
+  - | 
     #!/bin/bash
     # Migration Script for Legacy DDEV Providers
     
     migrate_env() {
         local env_name="$1"
         local dest_file=".env.${env_name}"
-        # Fallback for dev: if .env.dev doesn't exist, use .env (unless .env.dev is preferred)
-        # Our script uses .env.dev, but falls back to .env.
-        # Let's write to .env.dev to be explicit and modern.
-        
         shift
         local sources=($@)
-
         for src in "${sources[@]}"; do
             local src_path=".ddev/providers/${src}"
             if [ -f "$src_path" ]; then
                 if grep -q "environment_variables:" "$src_path"; then
                     echo "Found legacy configuration in ${src_path}. Migrating to ${dest_file}..."
-                    
-                    # Ensure dest file exists
                     touch "$dest_file"
-                    
-                    # Helper to extract and save
                     extract_save() {
                         local old_key="$1"
                         local new_key="$2"
-                        # awk to get value after colon, tr to strip quotes and spaces
-                        local val=$(grep "^	*${old_key}:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
-                        
+                        local val=$(grep "^\t*${old_key}:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
                         if [ -n "$val" ]; then
-                            # Check if already set
                             if ! grep -q "^${new_key}=" "$dest_file"; then
                                 echo "${new_key}=\"${val}\"" >> "$dest_file"
                             fi
                         fi
                     }
-
                     extract_save "sshuser" "SSH_USER"
                     extract_save "sshhost" "SSH_HOST"
                     extract_save "serverroot" "SERVER_ROOT"
@@ -181,23 +53,17 @@ pre_install_actions:
                     extract_save "dbname" "DB_NAME"
                     extract_save "dbhost" "DB_HOST"
                     extract_save "dbuser" "DB_USER"
-                    
-                    # Edit Config mapping
-                    local edit=$(grep "^	*editconf:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
+                    local edit=$(grep "^\t*editconf:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
                     if [[ "$edit" =~ ^[Nn] ]]; then
                          if ! grep -q "^EDIT_CONFIG=" "$dest_file"; then echo "EDIT_CONFIG=\"n\"" >> "$dest_file"; fi
                     elif [[ "$edit" =~ ^[Yy] ]]; then
                          if ! grep -q "^EDIT_CONFIG=" "$dest_file"; then echo "EDIT_CONFIG=\"y\"" >> "$dest_file"; fi
                     fi
-                    
-                    echo "Migration for ${env_name} complete."
                     return
                 fi
             fi
         done
     }
-    
-    # Run migrations checks
     migrate_env "dev" "dev.yaml" "development.yaml" "old.yaml"
     migrate_env "stage" "stage.yaml" "staging.yaml" "preview.yaml"
     migrate_env "live" "live.yaml" "prod.yaml" "production.yaml"
