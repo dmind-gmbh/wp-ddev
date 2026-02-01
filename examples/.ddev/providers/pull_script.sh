@@ -13,6 +13,7 @@ NC='\033[0m'
 # Determine Environment
 PULL_ENV="${PULL_ENV:-dev}"
 ENV_FILE=".env.${PULL_ENV}"
+ENV_FILE_SECRETS=".env.${PULL_ENV}.local"
 
 # Fallback compatibility
 if [ "$PULL_ENV" == "dev" ] && [ ! -f "$ENV_FILE" ] && [ -f ".env" ]; then
@@ -28,13 +29,13 @@ if [ -f "${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/providers/ensure_env_config.
     bash ${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/providers/ensure_env_config.sh "$PULL_ENV"
     
     # Reload env after wizard might have created it
-    if [ -f "$ENV_FILE" ]; then 
-        source "$ENV_FILE"
-    fi
+    if [ -f "$ENV_FILE" ]; then source "$ENV_FILE"; fi
+    if [ -f "$ENV_FILE_SECRETS" ]; then source "$ENV_FILE_SECRETS"; fi
 else
     echo -e "${RED}Error: Config helper script not found.${NC}"
     # Fallback loading if script missing
     if [ -f "$ENV_FILE" ]; then source "$ENV_FILE"; fi
+    if [ -f "$ENV_FILE_SECRETS" ]; then source "$ENV_FILE_SECRETS"; fi
 fi
 
 # ---------------------------------------------------------

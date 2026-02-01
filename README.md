@@ -38,7 +38,9 @@ ddev pull live
 This add-on streamlines the WordPress development workflow by handling:
 
 *   **Environment Syncing**: Securely pulls databases and files from remote servers via SSH. It automatically replaces domains in the database during import.
-*   **Configuration Management**: Stores environment-specific credentials (SSH user, DB password, etc.) in local `.env` files (e.g., `.env.dev`), which are never committed to Git.
+*   **Configuration Management**: Uses a split-configuration strategy:
+    *   **Shared Config** (`.env.dev`): Stores non-sensitive data (host, paths, users). Committed to Git.
+    *   **Secret Config** (`.env.dev.local`): Stores passwords. **Ignored** by Git.
 *   **WordPress Installation**: Provides a wizard to download and install WordPress core and themes.
 *   **Deployment**: Generates a GitHub Actions workflow to deploy your code to remote servers using `rsync`.
 *   **Smart Ignoring**: Automatically generates a `.gitignore` optimized for this workflow.

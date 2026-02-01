@@ -1,9 +1,11 @@
 #!/bin/bash
 # Shared Configuration Wizard
 # Ensures that .env.<env> exists and contains necessary variables.
+# Segregates secrets (passwords) into .env.<env>.local to allow committing the main config.
 
 ENV_NAME="${1:-dev}"
 ENV_FILE=".env.${ENV_NAME}"
+ENV_FILE_SECRETS=".env.${ENV_NAME}.local"
 
 # Colors
 GREEN='\033[0;32m'
@@ -11,35 +13,45 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Helper function to update .env
+# Helper function to update .env files
 update_env() {
-    local key="$1"
-    local value="$2"
-    local comment="$3"
+    local target_file="$1"
+    local key="$2"
+    local value="$3"
+    local comment="$4"
     
-    if [ ! -f "$ENV_FILE" ]; then
-        echo "# DDEV Project Configuration (${ENV_NAME})" > "$ENV_FILE"
+    if [ ! -f "$target_file" ]; then
+        if [[ "$target_file" == *".local" ]]; then
+            echo "# DDEV Project Secrets (${ENV_NAME}) - DO NOT COMMIT" > "$target_file"
+        else
+            echo "# DDEV Project Configuration (${ENV_NAME})" > "$target_file"
+        fi
     fi
 
-    if grep -q "^${key}=" "$ENV_FILE"; then
+    if grep -q "^${key}=" "$target_file"; then
         : # Variable exists
     else
-        echo "" >> "$ENV_FILE"
-        if [ -n "$comment" ]; then echo "# $comment" >> "$ENV_FILE"; fi
-        echo "${key}=\"${value}\"" >> "$ENV_FILE"
+        echo "" >> "$target_file"
+        if [ -n "$comment" ]; then echo "# $comment" >> "$target_file"; fi
+        echo "${key}=\"${value}\"" >> "$target_file"
     fi
 }
 
 echo -e "${CYAN}Checking configuration for: ${YELLOW}${ENV_NAME}${NC}"
 
-# Ensure config file exists
+# Ensure config files exist
 if [ ! -f "$ENV_FILE" ]; then
     echo -e "${YELLOW}Configuration file ${ENV_FILE} not found. Starting interactive setup...${NC}"
     touch "$ENV_FILE"
 fi
 
+if [ ! -f "$ENV_FILE_SECRETS" ]; then
+    touch "$ENV_FILE_SECRETS"
+fi
+
 # Load existing
 source "$ENV_FILE"
+source "$ENV_FILE_SECRETS"
 
 VARS_UPDATED=false
 
@@ -55,13 +67,19 @@ ensure_var() {
             echo -n "$prompt_text " > /dev/tty
             read -r -s input_val < /dev/tty
             echo "" > /dev/tty
+            
+            # Save secret to .local file
+            export "$var_name"="$input_val"
+            update_env "$ENV_FILE_SECRETS" "$var_name" "$input_val" "Secret: ${var_name}"
         else
             echo -n "$prompt_text " > /dev/tty
             read -r input_val < /dev/tty
+            
+            # Save config to shared file
+            export "$var_name"="$input_val"
+            update_env "$ENV_FILE" "$var_name" "$input_val" "Auto-generated setting"
         fi
         
-        export "$var_name"="$input_val"
-        update_env "$var_name" "$input_val" "Auto-generated setting"
         VARS_UPDATED=true
     fi
 }
@@ -74,7 +92,7 @@ if [ -z "${SSH_PORT:-}" ]; then
     read -r INPUT_PORT < /dev/tty
     SSH_PORT="${INPUT_PORT:-22}"
     export SSH_PORT
-    update_env "SSH_PORT" "$SSH_PORT" "Remote SSH Port"
+    update_env "$ENV_FILE" "SSH_PORT" "$SSH_PORT" "Remote SSH Port"
     VARS_UPDATED=true
 fi
 
@@ -90,22 +108,23 @@ if [ -z "${SOURCE_DOMAINS:-}" ]; then
     echo -n "Enter comma-separated domains to replace (e.g. old.com,alias.com): " > /dev/tty
     read -r INPUT_DOMAINS < /dev/tty
     export SOURCE_DOMAINS="$INPUT_DOMAINS"
-    update_env "SOURCE_DOMAINS" "$INPUT_DOMAINS" "Comma separated list of domains to replace"
+    update_env "$ENV_FILE" "SOURCE_DOMAINS" "$INPUT_DOMAINS" "Comma separated list of domains to replace"
     VARS_UPDATED=true
 fi
 
 # Prompt Settings Defaults
 if [ -z "${IGNORE_FILES_PROMPT:-}" ]; then
     export IGNORE_FILES_PROMPT="i"
-    update_env "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
+    update_env "$ENV_FILE" "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
 fi
 
 if [ -z "${IGNORED_FILES:-}" ]; then
      export IGNORED_FILES="*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log"
-     update_env "IGNORED_FILES" "$IGNORED_FILES" "Default file types to ignore"
+     update_env "$ENV_FILE" "IGNORED_FILES" "$IGNORED_FILES" "Default file types to ignore"
 fi
 
 if [ "$VARS_UPDATED" = true ]; then
-    echo -e "${GREEN}Configuration saved to ${ENV_FILE}.${NC}" > /dev/tty
+    echo -e "${GREEN}Configuration saved.${NC}" > /dev/tty
+    echo -e "${GREEN}  - Shared:  ${ENV_FILE} (Safe to commit)${NC}" > /dev/tty
+    echo -e "${GREEN}  - Secrets: ${ENV_FILE_SECRETS} (DO NOT COMMIT)${NC}" > /dev/tty
 fi
-
