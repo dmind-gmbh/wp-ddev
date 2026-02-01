@@ -1,4 +1,5 @@
 #!/bin/bash
+#ddev-generated
 # Shared Configuration Wizard
 # Ensures that .env.<env> exists and contains necessary variables.
 # Segregates secrets (passwords) into .env.<env>.local to allow committing the main config.
