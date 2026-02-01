@@ -28,8 +28,43 @@ fi
 echo "" > /dev/tty
 echo "Enter the absolute path on the remote server where files should be deployed." > /dev/tty
 echo "Example: /var/www/html/mysite/ or /kunden/12345/webseiten/site" > /dev/tty
-echo -n "Destination Path: " > /dev/tty
+
+# Try to find a default from existing env configs
+DEFAULT_PATH=""
+for env in live stage dev; do
+    if [ -f ".env.$env" ]; then
+        # Read variables without executing the whole file
+        SERVER_ROOT=$(grep "^SERVER_ROOT=" ".env.$env" | cut -d'"' -f2)
+        DATA_DIR=$(grep "^DATA_DIR=" ".env.$env" | cut -d'"' -f2)
+        
+        # Strip potential trailing slash from server_root to avoid double slash, though rsync handles it usually
+        # But we need to construct the full path
+        if [ -n "$SERVER_ROOT" ]; then
+             # Remove trailing slash from root if present
+             SERVER_ROOT="${SERVER_ROOT%/}"
+             # Ensure data dir starts with slash if root doesn't end with one, or just join.
+             # Actually DATA_DIR usually starts with / (relative to root? No, relative to system root usually means absolute)
+             # Wait, DATA_DIR in our config: "Enter Remote Data Directory (relative to root, usually /)"
+             # So SERVER_ROOT is usually the base, DATA_DIR is / or /public_html
+             
+             if [[ "$DATA_DIR" == /* ]]; then
+                 DEFAULT_PATH="${SERVER_ROOT}${DATA_DIR}"
+             else
+                 DEFAULT_PATH="${SERVER_ROOT}/${DATA_DIR}"
+             fi
+             break
+        fi
+    fi
+done
+
+if [ -n "$DEFAULT_PATH" ]; then
+    echo -n "Destination Path [${DEFAULT_PATH}]: " > /dev/tty
+else
+    echo -n "Destination Path: " > /dev/tty
+fi
+
 read -r DEST_PATH < /dev/tty
+DEST_PATH=${DEST_PATH:-$DEFAULT_PATH}
 
 if [ -z "$DEST_PATH" ]; then
     echo "Destination path is required. Skipping." > /dev/tty

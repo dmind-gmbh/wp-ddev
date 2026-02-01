@@ -59,25 +59,52 @@ VARS_UPDATED=false
 ensure_var() {
     local var_name="$1"
     local prompt_text="$2"
-    local current_val="${!var_name:-}"
     local is_secret="${3:-false}"
+    
+    # Check if variable is already in the file
+    local in_file=false
+    if grep -q "^${var_name}=" "$ENV_FILE" || ([ -f "$ENV_FILE_SECRETS" ] && grep -q "^${var_name}=" "$ENV_FILE_SECRETS"); then
+        in_file=true
+    fi
 
-    if [ -z "$current_val" ]; then
+    # Get current value from environment
+    local current_val="${!var_name:-}"
+
+    # If not in file, OR if in file but empty (and we want to enforce it? optional for now), handle it.
+    # We primarily care if it's missing from the file or empty in memory.
+    
+    if [ "$in_file" = false ] || [ -z "$current_val" ]; then
+        local input_val="$current_val"
+        
+        # If we don't have a value yet (not in env), prompt for it
+        if [ -z "$input_val" ]; then
+            while true; do
+                if [ "$is_secret" = true ]; then
+                    echo -n "$prompt_text " > /dev/tty
+                    read -r -s input_val < /dev/tty
+                    echo "" > /dev/tty
+                else
+                    echo -n "$prompt_text " > /dev/tty
+                    read -r input_val < /dev/tty
+                fi
+                
+                # Validation: Allow empty ONLY if not essential? 
+                # For now, let's enforce non-empty for Host/User/DB stuff to fix the user issue.
+                if [ -n "$input_val" ]; then
+                    break
+                fi
+                echo -e "${YELLOW}Value cannot be empty. Please try again.${NC}" > /dev/tty
+            done
+        fi
+        
+        # Export for current session
+        export "$var_name"="$input_val"
+        
+        # Save to file if not already there
         if [ "$is_secret" = true ]; then
-            echo -n "$prompt_text " > /dev/tty
-            read -r -s input_val < /dev/tty
-            echo "" > /dev/tty
-            
-            # Save secret to .local file
-            export "$var_name"="$input_val"
-            update_env "$ENV_FILE_SECRETS" "$var_name" "$input_val" "Secret: ${var_name}"
+             update_env "$ENV_FILE_SECRETS" "$var_name" "$input_val" "Secret: ${var_name}"
         else
-            echo -n "$prompt_text " > /dev/tty
-            read -r input_val < /dev/tty
-            
-            # Save config to shared file
-            export "$var_name"="$input_val"
-            update_env "$ENV_FILE" "$var_name" "$input_val" "Auto-generated setting"
+             update_env "$ENV_FILE" "$var_name" "$input_val" "Auto-generated setting"
         fi
         
         VARS_UPDATED=true
