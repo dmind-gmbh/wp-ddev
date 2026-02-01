@@ -8,7 +8,6 @@ project_files:
   - providers/pull_script.sh
   - providers/ensure_env_config.sh
   - scripts/gitignore_wizard.sh
-  - scripts/setup_wizard.sh
   - scripts/deploy_wizard.sh
   - templates/gitignore.template
   - templates/deploy.yml.template

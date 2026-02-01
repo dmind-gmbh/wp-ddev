@@ -24,8 +24,8 @@ echo -e "${CYAN}      Starting Pull for Environment: ${YELLOW}${PULL_ENV}${CYAN}
 echo -e "${CYAN}=======================================================${NC}"
 
 # Ensure Config exists
-if [ -f "/var/www/html/.ddev/providers/ensure_env_config.sh" ]; then
-    bash /var/www/html/.ddev/providers/ensure_env_config.sh "$PULL_ENV"
+if [ -f "${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/providers/ensure_env_config.sh" ]; then
+    bash ${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/providers/ensure_env_config.sh "$PULL_ENV"
     
     # Reload env after wizard might have created it
     if [ -f "$ENV_FILE" ]; then 
@@ -61,7 +61,7 @@ fi
 # wp-config Logic
 DO_EDIT_CONFIG="n"
 WP_CONFIG_MISSING=false
-if [ ! -e /var/www/html/${DDEV_DOCROOT}/wp-config.php ]; then
+if [ ! -e ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php ]; then
     WP_CONFIG_MISSING=true
     ANSWER="${EDIT_CONFIG:-i}"
     
@@ -109,7 +109,7 @@ mysqldump -u'$DB_USER' -h'$DB_HOST' -p'$DB_PASSWORD' '$DB_NAME' $SED_CMD | gzip 
 EOF
 
 echo -e "${BLUE}Downloading dump...${NC}"
-rsync -az -e "ssh -p ${SSH_PORT}" ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz /var/www/html/.ddev/.downloads
+rsync -az -e "ssh -p ${SSH_PORT}" ${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/db.sql.gz ${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/.downloads
 ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "rm '${SERVER_ROOT}'/db.sql.gz"
 
 echo -e "${GREEN}Database sync complete!${NC}"
@@ -131,20 +131,20 @@ fi
 echo -e "${BLUE}Syncing files...${NC}"
 if [ "$WP_CONFIG_MISSING" = false ]; then
     echo -e "${BLUE}Existing installation detected. Syncing only wp-content/uploads and languages...${NC}"
-    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" /var/www/html/${DDEV_DOCROOT}/wp-content/uploads
-    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" /var/www/html/${DDEV_DOCROOT}/wp-content/languages
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/uploads
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/languages
 else
     echo -e "${BLUE}Fresh installation detected. Syncing entire root...${NC}"
-    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" /var/www/html/${DDEV_DOCROOT}
+    eval rsync -chavzP -e \"ssh -p ${SSH_PORT}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}
     
     if [ "$DO_EDIT_CONFIG" == "y" ]; then
         echo -e "${YELLOW}Editing wp-config.php...${NC}"
-        sed -ir "s/define\s*(\s*'DB_NAME'\s*,\s*'$DB_NAME'\s*);/define( 'DB_NAME', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
-        sed -ir "s/define\s*(\s*'DB_USER'\s*,\s*'$DB_USER'\s*);/define( 'DB_USER', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
-        sed -ir "s/define\s*(\s*'DB_PASSWORD'\s*,\s*'[^']*'\s*);/define( 'DB_PASSWORD', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
-        sed -ir "s/define\s*(\s*'DB_HOST'\s*,\s*'$DB_HOST'\s*);/define( 'DB_HOST', 'db' );/" /var/www/html/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_NAME'\s*,\s*'$DB_NAME'\s*);/define( 'DB_NAME', 'db' );/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_USER'\s*,\s*'$DB_USER'\s*);/define( 'DB_USER', 'db' );/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_PASSWORD'\s*,\s*'[^']*'\s*);/define( 'DB_PASSWORD', 'db' );/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s/define\s*(\s*'DB_HOST'\s*,\s*'$DB_HOST'\s*);/define( 'DB_HOST', 'db' );/" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php
         
-        sed -ir "s|<?php|<?php\ndefine( 'WP_HOME', '$DDEV_PRIMARY_URL' );\ndefine( 'WP_SITEURL', '$DDEV_PRIMARY_URL' );|" /var/www/html/${DDEV_DOCROOT}/wp-config.php
+        sed -ir "s|<?php|<?php\ndefine( 'WP_HOME', '$DDEV_PRIMARY_URL' );\ndefine( 'WP_SITEURL', '$DDEV_PRIMARY_URL' );|" ${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php
         echo -e "${GREEN}wp-config.php updated.${NC}"
     fi
 fi

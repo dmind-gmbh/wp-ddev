@@ -15,4 +15,4 @@ db_pull_command:
   service: web
   command: |
     export PULL_ENV="stage"
-    bash /var/www/html/.ddev/providers/pull_script.sh
+    bash ${DDEV_COMPOSER_ROOT:-/var/www/html}/.ddev/providers/pull_script.sh

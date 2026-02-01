@@ -16,6 +16,14 @@ echo -e "${CYAN}=======================================================${NC}"
 echo -e "${CYAN}           DDEV Project Setup Wizard                   ${NC}"
 echo -e "${CYAN}=======================================================${NC}"
 
+# 0. Gitignore Setup
+echo -e "\n${BLUE}>> Step 0: Gitignore Setup${NC}"
+if [ -f ".ddev/scripts/gitignore_wizard.sh" ]; then
+    bash .ddev/scripts/gitignore_wizard.sh
+else
+    echo -e "${YELLOW}Warning: Gitignore wizard script not found.${NC}"
+fi
+
 # 1. Ensure Environment Config
 echo -e "\n${BLUE}>> Step 1: Environment Configuration (${ENV_NAME})${NC}"
 if [ -f ".ddev/providers/ensure_env_config.sh" ]; then
@@ -90,23 +98,18 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     INSTALL_THEME=${INSTALL_THEME:-Y}
     
     if [[ "$INSTALL_THEME" =~ ^[Yy]$ ]]; then
-         if [ -f ".ddev/scripts/setup_wizard.sh" ]; then
-             # We reuse the theme logic from the old setup wizard, 
-             # but strictly speaking, we might want to extract just the theme part.
-             # For now, let's just clone it manually here to avoid running the old wizard's other prompts.
-             
-             DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
-             if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then DOCROOT="${DOCROOT}/"; else DOCROOT=""; fi
-             THEMES_DIR="${DOCROOT}wp-content/themes"
-             TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
-             
-             mkdir -p "$THEMES_DIR"
-             if [ ! -d "$TARGET_DIR" ]; then
-                 git clone https://github.com/dmind-gmbh/dmind-wp-master.git "$TARGET_DIR"
-                 echo "Theme installed."
-             else
-                 echo "Theme directory already exists."
-             fi
+         # Theme Installation Logic
+         DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+         if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then DOCROOT="${DOCROOT}/"; else DOCROOT=""; fi
+         THEMES_DIR="${DOCROOT}wp-content/themes"
+         TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
+         
+         mkdir -p "$THEMES_DIR"
+         if [ ! -d "$TARGET_DIR" ]; then
+             git clone https://github.com/dmind-gmbh/dmind-wp-master.git "$TARGET_DIR"
+             echo "Theme installed."
+         else
+             echo "Theme directory already exists."
          fi
     fi
     
