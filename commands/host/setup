@@ -1,0 +1,119 @@
+#!/bin/bash
+## #ddev-generated
+## Description: Setup DDEV project environment, deployment, and WordPress installation
+## Usage: setup [environment]
+## Example: "ddev setup dev" or just "ddev setup" (defaults to dev)
+
+ENV_NAME="${1:-dev}"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${CYAN}=======================================================${NC}"
+echo -e "${CYAN}           DDEV Project Setup Wizard                   ${NC}"
+echo -e "${CYAN}=======================================================${NC}"
+
+# 1. Ensure Environment Config
+echo -e "\n${BLUE}>> Step 1: Environment Configuration (${ENV_NAME})${NC}"
+if [ -f ".ddev/providers/ensure_env_config.sh" ]; then
+    bash .ddev/providers/ensure_env_config.sh "$ENV_NAME"
+else
+    echo -e "${YELLOW}Warning: Config helper script not found. Skipping config check.${NC}"
+fi
+
+# 2. GitHub Deployment
+echo -e "\n${BLUE}>> Step 2: GitHub Deployment${NC}"
+if [ -f ".ddev/scripts/deploy_wizard.sh" ]; then
+    bash .ddev/scripts/deploy_wizard.sh
+else
+    echo -e "${YELLOW}Warning: Deployment wizard script not found.${NC}"
+fi
+
+# 3. WordPress Installation
+echo -e "\n${BLUE}>> Step 3: WordPress Installation${NC}"
+echo -n "Do you want to initialize a fresh WordPress installation? [y/N] " > /dev/tty
+read -r INSTALL_WP < /dev/tty
+INSTALL_WP=${INSTALL_WP:-N}
+
+if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
+    echo -e "${GREEN}Preparing WordPress installation...${NC}"
+    
+    # 3.1 Update Config for WordPress
+    echo "Configuring .ddev/config.yaml for WordPress..."
+    sed -i 's/^type:.*$/type: wordpress/' .ddev/config.yaml
+    
+    # Check if upload_dirs is already set
+    if ! grep -q "^upload_dirs:" .ddev/config.yaml; then
+        echo 'upload_dirs: ["dummy_uploads"]' >> .ddev/config.yaml
+        echo "Set upload_dirs to dummy_uploads to protect real uploads."
+    else
+        echo "upload_dirs already configured."
+    fi
+    
+    # 3.2 Restart DDEV
+    echo "Restarting DDEV to apply changes..."
+    ddev restart
+    
+    # 3.3 Download and Install WordPress
+    echo "Downloading WordPress Core..."
+    ddev wp core download
+
+    echo -e "${YELLOW}Please enter WordPress Site Title:${NC}" > /dev/tty
+    echo -n "Title: " > /dev/tty
+    read -r WP_TITLE < /dev/tty
+    
+    echo -e "${YELLOW}Please enter Admin Username:${NC}" > /dev/tty
+    echo -n "Username: " > /dev/tty
+    read -r WP_USER < /dev/tty
+    
+    echo -e "${YELLOW}Please enter Admin Password:${NC}" > /dev/tty
+    echo -n "Password: " > /dev/tty
+    read -r -s WP_PASS < /dev/tty
+    echo "" > /dev/tty
+    
+    echo -e "${YELLOW}Please enter Admin Email:${NC}" > /dev/tty
+    echo -n "Email: " > /dev/tty
+    read -r WP_EMAIL < /dev/tty
+    
+    PROJECT_URL=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4)
+    
+    echo "Installing WordPress..."
+    ddev wp core install --url="$PROJECT_URL" --title="$WP_TITLE" --admin_user="$WP_USER" --admin_password="$WP_PASS" --admin_email="$WP_EMAIL"
+    
+    # 3.4 Optional: Theme Setup
+    echo ""
+    echo -n "Do you want to download the d-mind Master-Theme? [Y/n] " > /dev/tty
+    read -r INSTALL_THEME < /dev/tty
+    INSTALL_THEME=${INSTALL_THEME:-Y}
+    
+    if [[ "$INSTALL_THEME" =~ ^[Yy]$ ]]; then
+         if [ -f ".ddev/scripts/setup_wizard.sh" ]; then
+             # We reuse the theme logic from the old setup wizard, 
+             # but strictly speaking, we might want to extract just the theme part.
+             # For now, let's just clone it manually here to avoid running the old wizard's other prompts.
+             
+             DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+             if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then DOCROOT="${DOCROOT}/"; else DOCROOT=""; fi
+             THEMES_DIR="${DOCROOT}wp-content/themes"
+             TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
+             
+             mkdir -p "$THEMES_DIR"
+             if [ ! -d "$TARGET_DIR" ]; then
+                 git clone https://github.com/dmind-gmbh/dmind-wp-master.git "$TARGET_DIR"
+                 echo "Theme installed."
+             else
+                 echo "Theme directory already exists."
+             fi
+         fi
+    fi
+    
+    echo -e "${GREEN}WordPress installation complete!${NC}"
+else
+    echo "Skipping WordPress installation."
+fi
+
+echo -e "\n${GREEN}Setup Complete!${NC}"
+echo "You can now run 'ddev pull ${ENV_NAME}' to sync content."

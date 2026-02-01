@@ -1,27 +1,20 @@
 name: interactive-ssh-pull
 version: v1.1.0
 project_files:
+  - commands/host/setup
   - providers/dev.yaml
   - providers/stage.yaml
   - providers/live.yaml
   - providers/pull_script.sh
+  - providers/ensure_env_config.sh
   - scripts/gitignore_wizard.sh
   - scripts/setup_wizard.sh
   - scripts/deploy_wizard.sh
   - templates/gitignore.template
   - templates/deploy.yml.template
 
-post_install_actions:
-  - | 
-    # Move to project root (DDEV runs post_install_actions from .ddev/)
-    cd ..
-    # Run wizards
-    bash .ddev/scripts/gitignore_wizard.sh
-    bash .ddev/scripts/setup_wizard.sh
-    bash .ddev/scripts/deploy_wizard.sh
-
 pre_install_actions:
-  - | 
+  - |
     #!/bin/bash
     # Migration Script for Legacy DDEV Providers
     
@@ -39,7 +32,7 @@ pre_install_actions:
                     extract_save() {
                         local old_key="$1"
                         local new_key="$2"
-                        local val=$(grep "^\t*${old_key}:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
+                        local val=$(grep "^    *${old_key}:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
                         if [ -n "$val" ]; then
                             if ! grep -q "^${new_key}=" "$dest_file"; then
                                 echo "${new_key}=\"${val}\"" >> "$dest_file"
@@ -53,7 +46,7 @@ pre_install_actions:
                     extract_save "dbname" "DB_NAME"
                     extract_save "dbhost" "DB_HOST"
                     extract_save "dbuser" "DB_USER"
-                    local edit=$(grep "^\t*editconf:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
+                    local edit=$(grep "^    *editconf:" "$src_path" | head -n1 | awk -F: '{print $2}' | tr -d ' "')
                     if [[ "$edit" =~ ^[Nn] ]]; then
                          if ! grep -q "^EDIT_CONFIG=" "$dest_file"; then echo "EDIT_CONFIG=\"n\"" >> "$dest_file"; fi
                     elif [[ "$edit" =~ ^[Yy] ]]; then

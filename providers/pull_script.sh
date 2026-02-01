@@ -10,11 +10,11 @@ CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Determine Environment and Config File
+# Determine Environment
 PULL_ENV="${PULL_ENV:-dev}"
 ENV_FILE=".env.${PULL_ENV}"
 
-# Fallback compatibility: If pulling 'dev' and .env.dev doesn't exist but .env does, use .env
+# Fallback compatibility
 if [ "$PULL_ENV" == "dev" ] && [ ! -f "$ENV_FILE" ] && [ -f ".env" ]; then
     ENV_FILE=".env"
 fi
@@ -23,123 +23,32 @@ echo -e "${CYAN}=======================================================${NC}"
 echo -e "${CYAN}      Starting Pull for Environment: ${YELLOW}${PULL_ENV}${CYAN}      ${NC}"
 echo -e "${CYAN}=======================================================${NC}"
 
-# Helper function to update .env
-update_env() {
-    local key="$1"
-    local value="$2"
-    local comment="$3"
+# Ensure Config exists
+if [ -f "/var/www/html/.ddev/providers/ensure_env_config.sh" ]; then
+    bash /var/www/html/.ddev/providers/ensure_env_config.sh "$PULL_ENV"
     
-    # If file doesn't exist, create it
-    if [ ! -f "$ENV_FILE" ]; then
-        echo "# DDEV Project Configuration (${PULL_ENV})" > "$ENV_FILE"
+    # Reload env after wizard might have created it
+    if [ -f "$ENV_FILE" ]; then 
+        source "$ENV_FILE"
     fi
-
-    # Check if key exists
-    if grep -q "^${key}=" "$ENV_FILE"; then
-        : # Variable exists
-    else
-        echo "" >> "$ENV_FILE"
-        if [ -n "$comment" ]; then echo "# $comment" >> "$ENV_FILE"; fi
-        echo "${key}=\"${value}\"" >> "$ENV_FILE"
-    fi
-}
-
-# Load environment variables if file exists
-if [ -f "$ENV_FILE" ]; then 
-    source "$ENV_FILE"
-    echo -e "${BLUE}Loaded configuration from ${ENV_FILE}${NC}"
 else
-    echo -e "${YELLOW}Configuration file ${ENV_FILE} not found. Starting interactive setup...${NC}"
+    echo -e "${RED}Error: Config helper script not found.${NC}"
+    # Fallback loading if script missing
+    if [ -f "$ENV_FILE" ]; then source "$ENV_FILE"; fi
 fi
 
 # ---------------------------------------------------------
-# PART 1: Interactive Setup & Persistence
-# ---------------------------------------------------------
-
-echo -e "${CYAN}>> Configuration Check${NC}"
-
-VARS_UPDATED=false
-
-# Function to prompt and save
-ensure_var() {
-    local var_name="$1"
-    local prompt_text="$2"
-    local current_val="${!var_name:-}"
-    local is_secret="${3:-false}"
-
-    if [ -z "$current_val" ]; then
-        if [ "$is_secret" = true ]; then
-            echo -n "$prompt_text "
-            read -s input_val
-            echo ""
-        else
-            read -p "$prompt_text " input_val
-        fi
-        
-        # Export for current session
-        export "$var_name"="$input_val"
-        
-        # Save to .env file
-        update_env "$var_name" "$input_val" "Auto-generated setting"
-        VARS_UPDATED=true
-    fi
-}
-
-ensure_var "SSH_USER" "Enter SSH Username (e.g. user-123):"
-ensure_var "SSH_HOST" "Enter SSH Host (e.g. example.com):"
-
-# SSH Port Handling
-if [ -z "${SSH_PORT:-}" ]; then
-    read -p "Enter SSH Port [22]: " INPUT_PORT
-    SSH_PORT="${INPUT_PORT:-22}"
-    export SSH_PORT
-    update_env "SSH_PORT" "$SSH_PORT" "Remote SSH Port"
-    VARS_UPDATED=true
-fi
-
-ensure_var "SERVER_ROOT" "Enter Remote Server Root Path:"
-ensure_var "DATA_DIR" "Enter Remote Data Directory (relative to root, usually /):"
-ensure_var "DB_NAME" "Enter Remote Database Name:"
-ensure_var "DB_HOST" "Enter Remote Database Host:"
-ensure_var "DB_USER" "Enter Remote Database User:"
-ensure_var "DB_PASSWORD" "Enter Remote Database Password:" true
-
-# Check for Domains
-if [ -z "${SOURCE_DOMAINS:-}" ]; then
-    echo -e "${YELLOW}Source Domains not configured.${NC}"
-    read -p "Enter comma-separated domains to replace (e.g. old.com,alias.com): " INPUT_DOMAINS
-    export SOURCE_DOMAINS="$INPUT_DOMAINS"
-    update_env "SOURCE_DOMAINS" "$INPUT_DOMAINS" "Comma separated list of domains to replace"
-    VARS_UPDATED=true
-fi
-
-# Check for Prompt Settings
-if [ -z "${IGNORE_FILES_PROMPT:-}" ]; then
-    export IGNORE_FILES_PROMPT="i"
-    update_env "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
-fi
-
-if [ -z "${IGNORED_FILES:-}" ]; then
-     export IGNORED_FILES="*.pdf,*.zip"
-     update_env "IGNORED_FILES" "*.pdf,*.zip" "Default file types to ignore"
-fi
-
-if [ "$VARS_UPDATED" = true ]; then
-    echo -e "${GREEN}Configuration saved to ${ENV_FILE}.${NC}"
-    echo ""
-fi
-
-# ---------------------------------------------------------
-# PART 2: Runtime Prompts
+# Runtime Prompts (File Ignores, WP Config)
 # ---------------------------------------------------------
 
 # File Ignores Logic
-DEFAULT_IGNORES="${IGNORED_FILES}"
-PROMPT_IGN_VAL="${IGNORE_FILES_PROMPT}"
+DEFAULT_IGNORES="${IGNORED_FILES:-*.pdf,*.zip}"
+PROMPT_IGN_VAL="${IGNORE_FILES_PROMPT:-i}"
 
 if [ "$PROMPT_IGN_VAL" == "i" ]; then
     echo -e "${YELLOW}Default file types to ignore: ${DEFAULT_IGNORES}${NC}"
-    read -p "Enter file types to ignore (comma separated) [${DEFAULT_IGNORES}]: " USER_IGNORES
+    echo -n "Enter file types to ignore (comma separated) [${DEFAULT_IGNORES}]: " > /dev/tty
+    read -r USER_IGNORES < /dev/tty
     FINAL_IGNORES="${USER_IGNORES:-$DEFAULT_IGNORES}"
 elif [ "$PROMPT_IGN_VAL" == "y" ]; then
     echo -e "${BLUE}Auto-accepting default ignores: ${DEFAULT_IGNORES}${NC}"
@@ -156,14 +65,10 @@ if [ ! -e /var/www/html/${DDEV_DOCROOT}/wp-config.php ]; then
     WP_CONFIG_MISSING=true
     ANSWER="${EDIT_CONFIG:-i}"
     
-    if [ -z "${EDIT_CONFIG:-}" ]; then
-        ANSWER="i"
-        update_env "EDIT_CONFIG" "i" "y=yes, n=no, i=interactive for wp-config editing"
-    fi
-
     if [ "$ANSWER" == "i" ]; then
         echo -e "${YELLOW}wp-config.php is missing.${NC}"
-        read -p "Do you want to automatically edit wp-config.php after download? [Y/n] (no): " PROMPT_ANS
+        echo -n "Do you want to automatically edit wp-config.php after download? [Y/n] (no): " > /dev/tty
+        read -r PROMPT_ANS < /dev/tty
         if [[ "$PROMPT_ANS" =~ ^[Yy]$ ]]; then DO_EDIT_CONFIG="y"; fi
     elif [ "$ANSWER" == "y" ]; then
         DO_EDIT_CONFIG="y"
@@ -174,7 +79,7 @@ echo -e "${GREEN}Starting sync process...${NC}"
 echo ""
 
 # ---------------------------------------------------------
-# PART 3: Execution
+# Execution
 # ---------------------------------------------------------
 
 # DB Sync
@@ -197,7 +102,7 @@ set -eu -o pipefail
 
 echo -e "${BLUE}Dumping remote database...${NC}"
 
-# Use HEREDOC to execute clean remote commands without quoting hell
+# Use HEREDOC to execute clean remote commands
 ssh -p "${SSH_PORT}" ${SSH_USER}@${SSH_HOST} "bash -s" <<EOF
 set -eu -o pipefail
 mysqldump -u'$DB_USER' -h'$DB_HOST' -p'$DB_PASSWORD' '$DB_NAME' $SED_CMD | gzip > '$SERVER_ROOT'/db.sql.gz
