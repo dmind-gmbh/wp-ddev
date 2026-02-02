@@ -38,7 +38,7 @@ for env in live stage dev; do
         DATA_DIR=$(grep "^DATA_DIR=" ".env.$env" | cut -d'"' -f2)
         
         # Strip potential trailing slash from server_root to avoid double slash, though rsync handles it usually
-        # But we need to construct the full path
+        # Construct the full path
         if [ -n "$SERVER_ROOT" ]; then
              # Remove trailing slash from root if present
              SERVER_ROOT="${SERVER_ROOT%/}"

@@ -13,7 +13,7 @@ jobs:
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
-      DEST: "/var/www/html/your-site/" # REPLACE WITH YOUR REMOTE PATH
+      DEST: "/var/www/html/webroot/" # REPLACE WITH YOUR REMOTE PATH
 
     steps:
       - name: 📥 Checkout repository
@@ -54,6 +54,6 @@ jobs:
           # Add your rsync commands here
           # Example:
           # echo "📦 Deploying theme..."
-          # rsync -avO --exclude /.git/ -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy.key" ./wp-content/themes/my-theme/ ${{ env.SSH_USER }}@${{ env.SSH_HOST }}:${{ env.DEST }}/wp-content/themes/my-theme/
+          # rsync -avO --exclude /.git/ -e "ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy.key" ./webroot/wp-content/themes/my-theme/ ${{ env.SSH_USER }}@${{ env.SSH_HOST }}:${{ env.DEST }}/wp-content/themes/my-theme/
         env:
           SSH_HOST: remote

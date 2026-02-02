@@ -71,13 +71,13 @@ ensure_var() {
     # Get current value from environment
     local current_val="${!var_name:-}"
 
-    # If not in file, OR if in file but empty (and we want to enforce it? optional for now), handle it.
-    # We primarily care if it's missing from the file or empty in memory.
+    # If not in file, OR if in file but empty, handle it.
+    # Check if it's missing from the file or empty in memory.
     
     if [ "$in_file" = false ] || [ -z "$current_val" ]; then
         local input_val="$current_val"
         
-        # If we don't have a value yet (not in env), prompt for it
+        # If no value is set (not in env), prompt for it
         if [ -z "$input_val" ]; then
             while true; do
                 if [ "$is_secret" = true ]; then

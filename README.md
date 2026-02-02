@@ -4,19 +4,22 @@ A DDEV add-on that automates WordPress project setup, database/file synchronizat
 
 ## How to use it
 
-### 1. Installation
+### 1. Project Directory Convention
+Use `webroot` as the directory for project files. If possible, the directory on the remote server should also be named `webroot`. This consistency simplifies path mapping.
+
+### 2. Installation
 Run this command in your DDEV project:
 ```bash
 ddev add-on get dmind-gmbh/wp-ddev
 ```
 
-### 2. Project Setup
+### 3. Project Setup
 Run the setup wizard to configure your environment, install WordPress, and set up deployment:
 ```bash
 ddev setup
 ```
 
-### 3. Sync Content (Pull)
+### 4. Sync Content (Pull)
 To pull database and files from a remote environment (dev, stage, or live):
 ```bash
 # First, ensure your SSH keys are loaded
