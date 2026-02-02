@@ -49,8 +49,18 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     ddev restart
     
     # 1.3 Download and Install WordPress
+    # Detect Docroot for correct path
+    DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+    if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then
+        WP_PATH_ARGS="--path=/var/www/html/$DOCROOT"
+        DOCROOT="${DOCROOT}/" # Normalize for theme setup
+    else
+        WP_PATH_ARGS=""
+        DOCROOT=""
+    fi
+
     echo "Downloading WordPress Core..."
-    ddev wp core download
+    ddev wp core download $WP_PATH_ARGS --force
 
     echo -e "${YELLOW}Please enter WordPress Site Title:${NC}" > /dev/tty
     echo -n "Title: " > /dev/tty
@@ -72,7 +82,7 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     PROJECT_URL=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4)
     
     echo "Installing WordPress..."
-    ddev wp core install --url="$PROJECT_URL" --title="$WP_TITLE" --admin_user="$WP_USER" --admin_password="$WP_PASS" --admin_email="$WP_EMAIL"
+    ddev wp core install $WP_PATH_ARGS --url="$PROJECT_URL" --title="$WP_TITLE" --admin_user="$WP_USER" --admin_password="$WP_PASS" --admin_email="$WP_EMAIL"
     
     # 1.4 Optional: Theme Setup
     echo ""
@@ -82,8 +92,6 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     
     if [[ "$INSTALL_THEME" =~ ^[Yy]$ ]]; then
          # Theme Installation Logic
-         DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
-         if [ -n "$DOCROOT" ] && [ "$DOCROOT" != "." ]; then DOCROOT="${DOCROOT}/"; else DOCROOT=""; fi
          THEMES_DIR="${DOCROOT}wp-content/themes"
          TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
          
