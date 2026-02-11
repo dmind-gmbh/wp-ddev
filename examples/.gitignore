@@ -23,6 +23,4 @@ Thumbs.db
 # Environment variables (secrets)
 .env.*.local
 .env
-
-# IDE files
-.idea/
+Gest

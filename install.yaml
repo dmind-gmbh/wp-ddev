@@ -2,7 +2,7 @@ name: interactive-ssh-pull
 version: v1.1.0
 project_files:
   - commands/host/setup
-  - commands/host/push
+  - commands/host/deploy
   - providers/dev.yaml
   - providers/stage.yaml
   - providers/live.yaml

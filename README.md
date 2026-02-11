@@ -26,7 +26,7 @@ The wizard will guide you through:
 | :--- | :--- |
 | `ddev setup` | Launches the interactive project setup wizard. |
 | `ddev pull [env]` | Syncs DB and Files from a remote server (`dev`, `stage`, `live`). |
-| `ddev push [env]` | One-time initial deployment of local DB and Files to a remote server. |
+| `ddev deploy [env]` | One-time initial deployment of local DB and Files to a remote server. |
 | `ddev auth ssh` | Authenticates your SSH key with the DDEV web container (required for pull/push). |
 
 ## 📁 Configuration
@@ -43,7 +43,7 @@ The plugin automates the repetitive "day 0" tasks. It downloads WordPress, sets 
 ### Data Synchronization (`ddev pull`)
 Uses a high-performance "streaming" approach. It executes `mysqldump` on the remote server and pipes the output directly into the DDEV database, performing domain replacements on the fly. It then uses `rsync` to pull down media files and translations.
 
-### Initial Deployment (`ddev push`)
+### Initial Deployment (`ddev deploy`)
 Provides a safe way to perform the first deployment to a new server. It exports your local database, replaces your local `.ddev.site` domain with the remote production domain, and uploads everything via SSH.
 
 ### GitHub Deployments
