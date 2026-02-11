@@ -60,51 +60,104 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     fi
 
     echo "Downloading WordPress Core..."
-    ddev wp core download $WP_PATH_ARGS --force
+    if [ -n "$WP_PATH_ARGS" ]; then
+        ddev wp core download "$WP_PATH_ARGS" --force
+    else
+        ddev wp core download --force
+    fi
 
     echo -e "${YELLOW}Please enter WordPress Site Title:${NC}" > /dev/tty
     echo -n "Title: " > /dev/tty
     read -r WP_TITLE < /dev/tty
-    
+
     echo -e "${YELLOW}Please enter Admin Username:${NC}" > /dev/tty
     echo -n "Username: " > /dev/tty
     read -r WP_USER < /dev/tty
-    
+
     echo -e "${YELLOW}Please enter Admin Password:${NC}" > /dev/tty
     echo -n "Password: " > /dev/tty
     read -r -s WP_PASS < /dev/tty
     echo "" > /dev/tty
-    
+
     echo -e "${YELLOW}Please enter Admin Email:${NC}" > /dev/tty
     echo -n "Email: " > /dev/tty
     read -r WP_EMAIL < /dev/tty
-    
+
     PROJECT_URL=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4)
-    
+
     echo "Installing WordPress..."
-    ddev wp core install $WP_PATH_ARGS --url="$PROJECT_URL" --title="$WP_TITLE" --admin_user="$WP_USER" --admin_password="$WP_PASS" --admin_email="$WP_EMAIL"
-    
+    INSTALL_ARGS=("--url=$PROJECT_URL" "--title='$WP_TITLE'" "--admin_user=$WP_USER" "--admin_password=$WP_PASS" "--admin_email=$WP_EMAIL")
+    if [ -n "$WP_PATH_ARGS" ]; then
+        ddev wp core install "$WP_PATH_ARGS" "${INSTALL_ARGS[@]}"
+    else
+        ddev wp core install "${INSTALL_ARGS[@]}"
+    fi
+
     # 1.4 Optional: Theme Setup
     echo ""
     echo -n "Do you want to download the d-mind Master-Theme? [Y/n] " > /dev/tty
     read -r INSTALL_THEME < /dev/tty
     INSTALL_THEME=${INSTALL_THEME:-Y}
-    
+
     if [[ "$INSTALL_THEME" =~ ^[Yy]$ ]]; then
          # Theme Installation Logic
          THEMES_DIR="${DOCROOT}wp-content/themes"
          TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
-         
+
          mkdir -p "$THEMES_DIR"
          if [ ! -d "$TARGET_DIR" ]; then
              git clone https://github.com/dmind-gmbh/dmind-wp-master.git "$TARGET_DIR"
              echo "Theme installed."
+             ddev wp theme activate dmind-wp-master
          else
              echo "Theme directory already exists."
          fi
     fi
-    
-    echo -e "${GREEN}WordPress installation complete!${NC}"
+
+    # 1.5 Plugin Setup
+    echo ""
+    echo -e "${BLUE}>> Step 1.5: Plugin Setup${NC}"
+    echo -n "Do you want to install default plugins (ACF Pro, dmind-fse-blocks)? [Y/n] " > /dev/tty
+    read -r INSTALL_PLUGINS < /dev/tty
+    INSTALL_PLUGINS=${INSTALL_PLUGINS:-Y}
+
+    if [[ "$INSTALL_PLUGINS" =~ ^[Yy]$ ]]; then
+        # 1.5.1 ACF Pro
+        echo -e "${YELLOW}ACF Pro Installation:${NC}" > /dev/tty
+        if [ -f ".env.local" ]; then source ".env.local"; fi
+
+        if [ -z "${ACF_PRO_KEY:-}" ]; then
+            echo -n "Enter ACF Pro License Key (leave empty to skip): " > /dev/tty
+            read -r ACF_KEY < /dev/tty
+            if [ -n "$ACF_KEY" ]; then
+                echo "ACF_PRO_KEY=\"$ACF_KEY\"" >> .env.local
+                ACF_PRO_KEY="$ACF_KEY"
+            fi
+        fi
+
+        if [ -n "${ACF_PRO_KEY:-}" ]; then
+            echo "Installing ACF Pro..."
+            # Using the official ACF Pro download URL format
+            ACF_URL="https://connect.advancedcustomfields.com/index.php?p=pro&a=download&k=${ACF_PRO_KEY}"
+            ddev wp plugin install "$ACF_URL" --activate
+        else
+            echo "Skipping ACF Pro (no key)."
+        fi
+
+        # 1.5.2 dmind-fse-blocks
+        echo "Installing dmind-fse-blocks..."
+        # Assuming it's a public or accessible git repo, or a zip
+        # User feedback mentioned it, I'll assume it's a specific repo
+        PLUGIN_DIR="${DOCROOT}wp-content/plugins/dmind-fse-blocks"
+        if [ ! -d "$PLUGIN_DIR" ]; then
+            git clone https://github.com/dmind-gmbh/dmind-fse-blocks.git "$PLUGIN_DIR"
+            ddev wp plugin activate dmind-fse-blocks
+        else
+            echo "dmind-fse-blocks already exists."
+        fi
+    fi
+
+    echo -e "${GREEN}WordPress installation and plugin setup complete!${NC}"
 else
     echo "Skipping WordPress installation."
 fi
