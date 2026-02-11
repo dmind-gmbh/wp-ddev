@@ -30,7 +30,8 @@ update_env() {
     fi
 
     if grep -q "^${key}=" "$target_file"; then
-        : # Variable exists
+        # Replace existing value
+        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$target_file"
     else
         echo "" >> "$target_file"
         if [ -n "$comment" ]; then echo "# $comment" >> "$target_file"; fi
@@ -38,7 +39,8 @@ update_env() {
     fi
 }
 
-echo -e "${CYAN}Checking configuration for: ${YELLOW}${ENV_NAME}${NC}"
+echo -e "${CYAN}Checking configuration for environment: ${YELLOW}${ENV_NAME}${NC}"
+echo -e "${CYAN}Note: Local environment will always use 'db' for DB credentials.${NC}"
 
 # Ensure config files exist
 if [ ! -f "$ENV_FILE" ]; then
@@ -51,8 +53,8 @@ if [ ! -f "$ENV_FILE_SECRETS" ]; then
 fi
 
 # Load existing
-source "$ENV_FILE"
-source "$ENV_FILE_SECRETS"
+[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+[ -f "$ENV_FILE_SECRETS" ] && source "$ENV_FILE_SECRETS"
 
 VARS_UPDATED=false
 
@@ -71,13 +73,9 @@ ensure_var() {
     # Get current value from environment
     local current_val="${!var_name:-}"
 
-    # If not in file, OR if in file but empty, handle it.
-    # Check if it's missing from the file or empty in memory.
-    
     if [ "$in_file" = false ] || [ -z "$current_val" ]; then
         local input_val="$current_val"
         
-        # If no value is set (not in env), prompt for it
         if [ -z "$input_val" ]; then
             while true; do
                 if [ "$is_secret" = true ]; then
@@ -89,8 +87,6 @@ ensure_var() {
                     read -r input_val < /dev/tty
                 fi
                 
-                # Validation: Allow empty ONLY if not essential? 
-                # For now, let's enforce non-empty for Host/User/DB stuff to fix the user issue.
                 if [ -n "$input_val" ]; then
                     break
                 fi
@@ -98,10 +94,8 @@ ensure_var() {
             done
         fi
         
-        # Export for current session
         export "$var_name"="$input_val"
         
-        # Save to file if not already there
         if [ "$is_secret" = true ]; then
              update_env "$ENV_FILE_SECRETS" "$var_name" "$input_val" "Secret: ${var_name}"
         else
@@ -112,11 +106,12 @@ ensure_var() {
     fi
 }
 
-ensure_var "SSH_USER" "Enter SSH Username (e.g. user-123):"
-ensure_var "SSH_HOST" "Enter SSH Host (e.g. example.com):"
+echo -e "\n${BLUE}--- SSH Connection ---${NC}"
+ensure_var "SSH_USER" "Enter REMOTE SSH Username (e.g. user-123):"
+ensure_var "SSH_HOST" "Enter REMOTE SSH Host (e.g. example.com):"
 
 if [ -z "${SSH_PORT:-}" ]; then
-    echo -n "Enter SSH Port [22]: " > /dev/tty
+    echo -n "Enter REMOTE SSH Port [22]: " > /dev/tty
     read -r INPUT_PORT < /dev/tty
     SSH_PORT="${INPUT_PORT:-22}"
     export SSH_PORT
@@ -124,12 +119,24 @@ if [ -z "${SSH_PORT:-}" ]; then
     VARS_UPDATED=true
 fi
 
-ensure_var "SERVER_ROOT" "Enter Remote Server Base Path (Absolute, e.g. /var/www/vhosts/example.com):"
+echo -e "\n${BLUE}--- Server Paths ---${NC}"
+ensure_var "SERVER_ROOT" "Enter REMOTE Server Base Path (Absolute, e.g. /var/www/vhosts/example.com):"
 ensure_var "DATA_DIR" "Enter Project Subdirectory relative to Base Path (e.g. / or /httpdocs):"
-ensure_var "DB_NAME" "Enter Remote Database Name:"
-ensure_var "DB_HOST" "Enter Remote Database Host:"
-ensure_var "DB_USER" "Enter Remote Database User:"
-ensure_var "DB_PASSWORD" "Enter Remote Database Password:" true
+
+echo -e "\n${BLUE}--- Remote Database (Production/Staging Credentials) ---${NC}"
+ensure_var "DB_NAME" "Enter REMOTE Database Name:"
+ensure_var "DB_HOST" "Enter REMOTE Database Host:"
+ensure_var "DB_USER" "Enter REMOTE Database User:"
+ensure_var "DB_PASSWORD" "Enter REMOTE Database Password:" true
+
+echo -e "\n${BLUE}--- Domain Handling ---${NC}"
+if [ -z "${SOURCE_DOMAINS:-}" ]; then
+    echo -n "Enter comma-separated REMOTE domains to replace with local URL (e.g. example.com,www.example.com): " > /dev/tty
+    read -r INPUT_DOMAINS < /dev/tty
+    export SOURCE_DOMAINS="$INPUT_DOMAINS"
+    update_env "$ENV_FILE" "SOURCE_DOMAINS" "$INPUT_DOMAINS" "Comma separated list of domains to replace"
+    VARS_UPDATED=true
+fi
 
 # Optional Plugin Settings
 if [ -z "${ACF_PRO_KEY:-}" ]; then
@@ -142,28 +149,6 @@ if [ -z "${ACF_PRO_KEY:-}" ]; then
     fi
 fi
 
-if [ -z "${SOURCE_DOMAINS:-}" ]; then
-    echo -e "${YELLOW}Source Domains not configured.${NC}" > /dev/tty
-    echo -n "Enter comma-separated domains to replace (e.g. old.com,alias.com): " > /dev/tty
-    read -r INPUT_DOMAINS < /dev/tty
-    export SOURCE_DOMAINS="$INPUT_DOMAINS"
-    update_env "$ENV_FILE" "SOURCE_DOMAINS" "$INPUT_DOMAINS" "Comma separated list of domains to replace"
-    VARS_UPDATED=true
-fi
-
-# Prompt Settings Defaults
-if [ -z "${IGNORE_FILES_PROMPT:-}" ]; then
-    export IGNORE_FILES_PROMPT="i"
-    update_env "$ENV_FILE" "IGNORE_FILES_PROMPT" "i" "y=auto-accept default ignores, n=ignore nothing, i=interactive"
-fi
-
-if [ -z "${IGNORED_FILES:-}" ]; then
-     export IGNORED_FILES="*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log"
-     update_env "$ENV_FILE" "IGNORED_FILES" "$IGNORED_FILES" "Default file types to ignore"
-fi
-
 if [ "$VARS_UPDATED" = true ]; then
-    echo -e "${GREEN}Configuration saved.${NC}" > /dev/tty
-    echo -e "${GREEN}  - Shared:  ${ENV_FILE} (Safe to commit)${NC}" > /dev/tty
-    echo -e "${GREEN}  - Secrets: ${ENV_FILE_SECRETS} (DO NOT COMMIT)${NC}" > /dev/tty
+    echo -e "\n${GREEN}Configuration for ${ENV_NAME} saved.${NC}" > /dev/tty
 fi

@@ -54,21 +54,25 @@ fi
 # 1. Push Database
 echo -e "\n${BLUE}>> Phase 1: Database Push${NC}"
 echo -e "Exporting local database..."
+mkdir -p .ddev/.downloads
 ddev export-db -f .ddev/.downloads/local_push.sql.gz
 
-# Search and replace if SOURCE_DOMAINS is set
-if [ -n "${SOURCE_DOMAINS:-}" ]; then
-    # Take the first domain as the primary destination domain
-    DEST_DOMAIN=$(echo "$SOURCE_DOMAINS" | cut -d',' -f1 | xargs)
+# Search and replace
+DEST_DOMAIN=$(echo "${SOURCE_DOMAINS:-}" | cut -d',' -f1 | xargs)
+if [ -z "$DEST_DOMAIN" ]; then
+    echo -e "${YELLOW}No source domain configured for replacement. Searching for production domain...${NC}"
+    echo -n "Enter the remote domain (e.g. example.com): "
+    read -r DEST_DOMAIN
+fi
+
+if [ -n "$DEST_DOMAIN" ]; then
     DDEV_HOSTNAME=$(grep "^name:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'").ddev.site
-    
-    echo -e "Replacing ${DDEV_HOSTNAME} with ${DEST_DOMAIN}..."
+    echo -e "Replacing ${DDEV_HOSTNAME} with ${DEST_DOMAIN} in dump..."
     gunzip -c .ddev/.downloads/local_push.sql.gz | sed "s/${DDEV_HOSTNAME}/${DEST_DOMAIN}/g" | gzip > .ddev/.downloads/local_push_replaced.sql.gz
     mv .ddev/.downloads/local_push_replaced.sql.gz .ddev/.downloads/local_push.sql.gz
 fi
 
 echo -e "Uploading and importing to remote..."
-# We upload the compressed SQL and then import it on the remote
 rsync -az -e "ssh -p ${SSH_PORT:-22}" .ddev/.downloads/local_push.sql.gz "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/push_db.sql.gz"
 
 ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" "bash -s" <<EOF
@@ -86,9 +90,10 @@ LOCAL_ROOT="${DOCROOT:-.}"
 
 echo -e "Pushing files to ${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}..."
 
-# Default ignores
+# Default ignores + safety ignores for push
+# We EXCLUDE wp-config.php and DDEV specific files to avoid breaking remote
+EXCLUDE_FLAGS="--exclude '.git' --exclude '.ddev' --exclude 'node_modules' --exclude 'wp-config.php' --exclude 'wp-config-ddev.php'"
 DEFAULT_IGNORES="${IGNORED_FILES:-*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log}"
-EXCLUDE_FLAGS="--exclude '.git' --exclude '.ddev' --exclude 'node_modules'"
 IFS=',' read -ra IGNORE_LIST <<< "$DEFAULT_IGNORES"
 for item in "${IGNORE_LIST[@]}"; do
     item=$(echo "$item" | xargs)
@@ -97,8 +102,38 @@ for item in "${IGNORE_LIST[@]}"; do
     done
 done
 
-# We use -R to ensure relative paths are preserved if needed, but usually we just sync the content of docroot
 eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${LOCAL_ROOT}/" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/"
 
-echo -e "${GREEN}Files push complete!${NC}"
+# 3. Handle Remote wp-config.php
+echo -e "\n${BLUE}>> Phase 3: Remote Configuration${NC}"
+echo -n "Do you want to generate/update the remote wp-config.php? [y/N] "
+read -r GEN_CONFIG
+if [[ "$GEN_CONFIG" =~ ^[Yy]$ ]]; then
+    echo "Generating remote wp-config.php..."
+    # We create a minimal wp-config.php on the remote
+    ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" "bash -s" <<EOF
+cat > "${SERVER_ROOT}${DATA_DIR}/wp-config.php" <<CONFIG
+<?php
+define( 'DB_NAME', '${DB_NAME}' );
+define( 'DB_USER', '${DB_USER}' );
+define( 'DB_PASSWORD', '${DB_PASSWORD}' );
+define( 'DB_HOST', '${DB_HOST}' );
+define( 'DB_CHARSET', 'utf8' );
+define( 'DB_COLLATE', '' );
+
+\$table_prefix = 'wp_';
+
+define( 'WP_DEBUG', false );
+
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', __DIR__ . '/' );
+}
+
+require_once ABSPATH . 'wp-settings.php';
+CONFIG
+EOF
+    echo -e "${GREEN}Remote wp-config.php created.${NC}"
+fi
+
 echo -e "\n${GREEN}Push to ${ENV_NAME} successful!${NC}"
+echo -e "${YELLOW}Note: Don't forget to check file permissions on the remote server.${NC}"

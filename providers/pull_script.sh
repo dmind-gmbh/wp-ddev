@@ -44,14 +44,14 @@ fi
 
 MODE="${1:-all}" # all, db, files
 
+# Local target database is ALWAYS 'db'
+LOCAL_DB="db"
+
 # ---------------------------------------------------------
 # DB Pull
 # ---------------------------------------------------------
 if [[ "$MODE" == "all" || "$MODE" == "db" ]]; then
     log "${CYAN}>> Phase 1: Database Sync (${PULL_ENV})${NC}"
-    
-    # We use a temp script on the remote to ensure we get a clean dump
-    # but we stream it back.
     
     SED_COMMANDS=""
     if [ -n "${SOURCE_DOMAINS:-}" ]; then
@@ -77,6 +77,9 @@ fi
 if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
     log "${CYAN}>> Phase 2: Files Sync (${PULL_ENV})${NC}"
     
+    # Ensure docroot exists
+    mkdir -p "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}"
+
     DEFAULT_IGNORES="${IGNORED_FILES:-*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log}"
     EXCLUDE_FLAGS=""
     IFS=',' read -ra IGNORE_LIST <<< "$DEFAULT_IGNORES"
@@ -88,24 +91,39 @@ if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
     done
 
     # Determine if we are doing a full sync or just uploads
-    # If wp-config.php exists, we usually just want uploads.
-    if [ -f "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php" ]; then
-        log "${BLUE}Syncing uploads and languages...${NC}"
+    WP_CONFIG_PATH="${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php"
+    
+    if [ -f "$WP_CONFIG_PATH" ]; then
+        log "${BLUE}Existing installation detected. Syncing uploads and languages...${NC}"
         eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/uploads/" >&2
         eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/languages/" >&2
     else
-        log "${BLUE}Fresh installation: Syncing entire root...${NC}"
+        log "${BLUE}Empty local project: Performing Full Sync...${NC}"
         eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/" >&2
+    fi
+
+    # Post-Sync: Ensure wp-config.php is DDEV compatible
+    if [ -f "$WP_CONFIG_PATH" ]; then
+        log "${YELLOW}Ensuring wp-config.php is DDEV compatible...${NC}"
         
-        # After full sync, we should fix wp-config.php
-        log "${YELLOW}Adjusting wp-config.php for local environment...${NC}"
-        if [ -f "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config.php" ]; then
-            wp config set DB_NAME db >&2
-            wp config set DB_USER db >&2
-            wp config set DB_PASSWORD db >&2
-            wp config set DB_HOST db >&2
-            wp config set WP_HOME "$DDEV_PRIMARY_URL" >&2
-            wp config set WP_SITEURL "$DDEV_PRIMARY_URL" >&2
+        # 1. Force Local DB Credentials to 'db'
+        wp config set DB_NAME "$LOCAL_DB" --type=constant >&2
+        wp config set DB_USER "$LOCAL_DB" --type=constant >&2
+        wp config set DB_PASSWORD "$LOCAL_DB" --type=constant >&2
+        wp config set DB_HOST "$LOCAL_DB" --type=constant >&2
+        wp config set WP_HOME "$DDEV_PRIMARY_URL" --type=constant >&2
+        wp config set WP_SITEURL "${DDEV_PRIMARY_URL}/" --type=constant >&2
+
+        # 2. Ensure DDEV settings inclusion if missing
+        if ! grep -q "wp-config-ddev.php" "$WP_CONFIG_PATH"; then
+            log "${BLUE}Injecting DDEV settings inclusion...${NC}"
+            # Insert before the "stop editing" line or at the end
+            if grep -q "That's all, stop editing!" "$WP_CONFIG_PATH"; then
+                sed -i "/That's all, stop editing!/i \
+// Include for settings managed by ddev.\n\$ddev_settings = __DIR__ . '/wp-config-ddev.php';\nif ( ! defined( 'DB_USER' ) && getenv( 'IS_DDEV_PROJECT' ) == 'true' && is_readable( \$ddev_settings ) ) {\n\trequire_once( \$ddev_settings );\n}\n" "$WP_CONFIG_PATH"
+            else
+                echo -e "\n// Include for settings managed by ddev.\n\$ddev_settings = __DIR__ . '/wp-config-ddev.php';\nif ( ! defined( 'DB_USER' ) && getenv( 'IS_DDEV_PROJECT' ) == 'true' && is_readable( \$ddev_settings ) ) {\n\trequire_once( \$ddev_settings );\n}" >> "$WP_CONFIG_PATH"
+            fi
         fi
     fi
     
