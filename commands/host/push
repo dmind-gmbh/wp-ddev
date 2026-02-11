@@ -91,18 +91,19 @@ LOCAL_ROOT="${DOCROOT:-.}"
 echo -e "Pushing files to ${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}..."
 
 # Default ignores + safety ignores for push
-# We EXCLUDE wp-config.php and DDEV specific files to avoid breaking remote
-EXCLUDE_FLAGS="--exclude '.git' --exclude '.ddev' --exclude 'node_modules' --exclude 'wp-config.php' --exclude 'wp-config-ddev.php'"
+RSYNC_PUSH_ARGS=("-chavzP" "-e" "ssh -p ${SSH_PORT:-22}")
+RSYNC_PUSH_ARGS+=("--exclude=.git" "--exclude=.ddev" "--exclude=node_modules" "--exclude=wp-config.php" "--exclude=wp-config-ddev.php")
+
 DEFAULT_IGNORES="${IGNORED_FILES:-*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log}"
 IFS=',' read -ra IGNORE_LIST <<< "$DEFAULT_IGNORES"
 for item in "${IGNORE_LIST[@]}"; do
     item=$(echo "$item" | xargs)
     if [ -n "$item" ]; then
-        EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude '$item'"
-    done
+        RSYNC_PUSH_ARGS+=("--exclude=$item")
+    fi
 done
 
-eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${LOCAL_ROOT}/" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/"
+rsync "${RSYNC_PUSH_ARGS[@]}" "${LOCAL_ROOT}/" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/"
 
 # 3. Handle Remote wp-config.php
 echo -e "\n${BLUE}>> Phase 3: Remote Configuration${NC}"

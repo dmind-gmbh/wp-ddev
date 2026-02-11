@@ -124,7 +124,7 @@ if [ -f "$TEMPLATE_FILE" ]; then
     
     # Replace variables
     export ENV_NAME BRANCH_NAME DEST_PATH SUFFIX
-    perl -i -pe 's|name: .*|name: 🚀 Deploy to '"$ENV_NAME"'|g' "$DEPLOY_FILE"
+    perl -i -pe "s|name: .*|name: 🚀 Deploy to $ENV_NAME|g" "$DEPLOY_FILE"
     perl -i -pe 's|branches:.*|branches:|g' "$DEPLOY_FILE"
     perl -i -pe 's|- main|- '"$BRANCH_NAME"'|g' "$DEPLOY_FILE"
     perl -i -pe 's|\{\{DESTINATION_PATH\}\}|$ENV{DEST_PATH}|g' "$DEPLOY_FILE"

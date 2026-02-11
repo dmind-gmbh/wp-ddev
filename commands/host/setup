@@ -60,7 +60,11 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     fi
 
     echo "Downloading WordPress Core..."
-    ddev wp core download $WP_PATH_ARGS --force
+    if [ -n "$WP_PATH_ARGS" ]; then
+        ddev wp core download "$WP_PATH_ARGS" --force
+    else
+        ddev wp core download --force
+    fi
 
     echo -e "${YELLOW}Please enter WordPress Site Title:${NC}" > /dev/tty
     echo -n "Title: " > /dev/tty
@@ -82,7 +86,12 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     PROJECT_URL=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4)
     
     echo "Installing WordPress..."
-    ddev wp core install $WP_PATH_ARGS --url="$PROJECT_URL" --title="$WP_TITLE" --admin_user="$WP_USER" --admin_password="$WP_PASS" --admin_email="$WP_EMAIL"
+    INSTALL_ARGS=("--url=$PROJECT_URL" "--title=$WP_TITLE" "--admin_user=$WP_USER" "--admin_password=$WP_PASS" "--admin_email=$WP_EMAIL")
+    if [ -n "$WP_PATH_ARGS" ]; then
+        ddev wp core install "$WP_PATH_ARGS" "${INSTALL_ARGS[@]}"
+    else
+        ddev wp core install "${INSTALL_ARGS[@]}"
+    fi
     
     # 1.4 Optional: Theme Setup
     echo ""

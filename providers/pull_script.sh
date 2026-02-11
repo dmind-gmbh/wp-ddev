@@ -81,12 +81,13 @@ if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
     mkdir -p "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}"
 
     DEFAULT_IGNORES="${IGNORED_FILES:-*.pdf,*.zip,*.tar.gz,*.sql,*.sql.gz,*.mp4,*.mov,*.avi,*.log,debug.log}"
-    EXCLUDE_FLAGS=""
+    RSYNC_ARGS=("-chavzP" "-e" "ssh -p ${SSH_PORT:-22}")
+    
     IFS=',' read -ra IGNORE_LIST <<< "$DEFAULT_IGNORES"
     for item in "${IGNORE_LIST[@]}"; do
         item=$(echo "$item" | xargs)
         if [ -n "$item" ]; then
-            EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude='$item'"
+            RSYNC_ARGS+=("--exclude=$item")
         fi
     done
 
@@ -95,11 +96,11 @@ if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
     
     if [ -f "$WP_CONFIG_PATH" ]; then
         log "${BLUE}Existing installation detected. Syncing uploads and languages...${NC}"
-        eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/uploads/" >&2
-        eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/languages/" >&2
+        rsync "${RSYNC_ARGS[@]}" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/uploads/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/uploads/" >&2
+        rsync -chavzP -e "ssh -p ${SSH_PORT:-22}" --exclude '*.zip' "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-content/languages/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-content/languages/" >&2
     else
         log "${BLUE}Empty local project: Performing Full Sync...${NC}"
-        eval rsync -chavzP -e \"ssh -p ${SSH_PORT:-22}\" $EXCLUDE_FLAGS "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/" >&2
+        rsync "${RSYNC_ARGS[@]}" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/" "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/" >&2
     fi
 
     # Post-Sync: Ensure wp-config.php is DDEV compatible
