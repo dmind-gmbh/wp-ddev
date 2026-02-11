@@ -106,7 +106,7 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
          TARGET_DIR="${THEMES_DIR}/dmind-wp-master"
          
          mkdir -p "$THEMES_DIR"
-          if [ ! -d "$TARGET_DIR" ]; then
+         if [ ! -d "$TARGET_DIR" ]; then
              git clone https://github.com/dmind-gmbh/dmind-wp-master.git "$TARGET_DIR"
              echo "Theme installed."
              if [ -n "$WP_PATH_ARGS" ]; then
@@ -114,67 +114,61 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
              else
                  ddev wp theme activate dmind-wp-master
              fi
-          else
+         else
              echo "Theme directory already exists."
-          fi
-     fi
-
-     # 1.5 Plugin Setup
-     echo ""
-     echo -e "${BLUE}>> Step 1.5: Plugin Setup${NC}"
-     echo -n "Do you want to install default plugins (ACF Pro, dmind-fse-blocks)? [Y/n] " > /dev/tty
-     read -r INSTALL_PLUGINS < /dev/tty
-     INSTALL_PLUGINS=${INSTALL_PLUGINS:-Y}
-
-     if [[ "$INSTALL_PLUGINS" =~ ^[Yy]$ ]]; then
-         # 1.5.1 ACF Pro
-         echo -e "${YELLOW}ACF Pro Installation:${NC}" > /dev/tty
-         if [ -f ".env.local" ]; then source ".env.local"; fi
-         
-         if [ -z "${ACF_PRO_KEY:-}" ]; then
-             echo -n "Enter ACF Pro License Key (leave empty to skip): " > /dev/tty
-             read -r ACF_KEY < /dev/tty
-             if [ -n "$ACF_KEY" ]; then
-                 echo "ACF_PRO_KEY=\"$ACF_KEY\"" >> .env.local
-                 ACF_PRO_KEY="$ACF_KEY"
-             fi
          fi
+    fi
 
-         if [ -n "${ACF_PRO_KEY:-}" ]; then
-             echo "Installing ACF Pro..."
-             # Using the official ACF Pro download URL format (v2)
-             ACF_URL="https://connect.advancedcustomfields.com/v2/plugins/download?s=web&p=pro&k=${ACF_PRO_KEY}"
-             
-             # Use ddev exec for more robust quoting of complex URLs
-             if [ -n "$WP_PATH_ARGS" ]; then
-                 ddev exec wp plugin install "'$ACF_URL'" --activate "$WP_PATH_ARGS"
-             else
-                 ddev exec wp plugin install "'$ACF_URL'" --activate
-             fi
-         else
+    # 1.5 Plugin Setup
+    echo ""
+    echo -e "${BLUE}>> Step 1.5: Plugin Setup${NC}"
+    echo -n "Do you want to install default plugins (ACF Pro, dmind-fse-blocks)? [Y/n] " > /dev/tty
+    read -r INSTALL_PLUGINS < /dev/tty
+    INSTALL_PLUGINS=${INSTALL_PLUGINS:-Y}
 
-                 ddev wp plugin install "'$ACF_URL'" --activate
-             fi
-         else
-             echo "Skipping ACF Pro (no key)."
-         fi
+    if [[ "$INSTALL_PLUGINS" =~ ^[Yy]$ ]]; then
+        # 1.5.1 ACF Pro
+        echo -e "${YELLOW}ACF Pro Installation:${NC}" > /dev/tty
+        if [ -f ".env.local" ]; then source ".env.local"; fi
+        
+        if [ -z "${ACF_PRO_KEY:-}" ]; then
+            echo -n "Enter ACF Pro License Key (leave empty to skip): " > /dev/tty
+            read -r ACF_KEY < /dev/tty
+            if [ -n "$ACF_KEY" ]; then
+                echo "ACF_PRO_KEY=\"$ACF_KEY\"" >> .env.local
+                ACF_PRO_KEY="$ACF_KEY"
+            fi
+        fi
 
-         # 1.5.2 dmind-fse-blocks
-         echo "Installing dmind-fse-blocks..."
-         PLUGIN_DIR="${DOCROOT}wp-content/plugins/dmind-fse-blocks"
-         if [ ! -d "$PLUGIN_DIR" ]; then
-             git clone https://github.com/dmind-gmbh/dmind-fse-blocks.git "$PLUGIN_DIR"
-             
-             if [ -n "$WP_PATH_ARGS" ]; then
-                 ddev wp plugin activate dmind-fse-blocks "$WP_PATH_ARGS"
-             else
-                 ddev wp plugin activate dmind-fse-blocks
-             fi
-         else
-             echo "dmind-fse-blocks already exists."
-         fi
-     fi
+        if [ -n "${ACF_PRO_KEY:-}" ]; then
+            echo "Installing ACF Pro..."
+            # Using the official ACF Pro download URL format (v2)
+            ACF_URL="https://connect.advancedcustomfields.com/v2/plugins/download?s=web&p=pro&k=${ACF_PRO_KEY}"
+            
+            if [ -n "$WP_PATH_ARGS" ]; then
+                ddev exec wp plugin install "'$ACF_URL'" --activate "$WP_PATH_ARGS"
+            else
+                ddev exec wp plugin install "'$ACF_URL'" --activate
+            fi
+        else
+            echo "Skipping ACF Pro (no key)."
+        fi
 
+        # 1.5.2 dmind-fse-blocks
+        echo "Installing dmind-fse-blocks..."
+        PLUGIN_DIR="${DOCROOT}wp-content/plugins/dmind-fse-blocks"
+        if [ ! -d "$PLUGIN_DIR" ]; then
+            git clone https://github.com/dmind-gmbh/dmind-fse-blocks.git "$PLUGIN_DIR"
+            
+            if [ -n "$WP_PATH_ARGS" ]; then
+                ddev wp plugin activate dmind-fse-blocks "$WP_PATH_ARGS"
+            else
+                ddev wp plugin activate dmind-fse-blocks
+            fi
+        else
+            echo "dmind-fse-blocks already exists."
+        fi
+    fi
     
     echo -e "${GREEN}WordPress installation and plugin setup complete!${NC}"
 else
