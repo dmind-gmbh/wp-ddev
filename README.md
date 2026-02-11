@@ -1,84 +1,53 @@
-# DDEV SSH Pull & Deployment for WordPress
+# DDEV Pull Plugin (WordPress)
 
-A DDEV add-on that automates WordPress project setup, database/file synchronization from remote environments (dev/stage/live), and GitHub Actions deployment.
+A comprehensive DDEV add-on for scaffolding WordPress projects, syncing data from remote servers via SSH, and setting up automated GitHub deployments.
 
-## How to use it
+## 🚀 Quick Start
 
-### 1. Project Directory Convention
-Use `webroot` as the directory for project files. If possible, the directory on the remote server should also be named `webroot`. This consistency simplifies path mapping.
-
-### 2. Installation
-Run this command in your DDEV project:
+### 1. Install the Add-on
 ```bash
-ddev add-on get dmind-gmbh/wp-ddev
+ddev get dmind-gmbh/ddev-pull-plugin
 ```
 
-### 3. Project Setup
-Run the setup wizard to configure your environment, install WordPress, and set up deployment:
+### 2. Run the Setup Wizard
 ```bash
 ddev setup
 ```
+The wizard will guide you through:
+- Configuring `.gitignore` for DDEV/WordPress.
+- Initializing a fresh WordPress install (optional).
+- Installing the **d-mind Master-Theme** and default plugins (**ACF Pro**, **dmind-fse-blocks**).
+- Setting up remote server configurations (`dev`, `stage`, `live`).
+- Generating GitHub Action deployment workflows for multiple environments.
 
-### 4. Sync Content (Pull)
-To pull database and files from a remote environment (dev, stage, or live):
-```bash
-# First, ensure your SSH keys are loaded
-ddev auth ssh
+## 🛠 Commands
 
-# Pull from development
-ddev pull dev
+| Command | Description |
+| :--- | :--- |
+| `ddev setup` | Launches the interactive project setup wizard. |
+| `ddev pull [env]` | Syncs DB and Files from a remote server (`dev`, `stage`, `live`). |
+| `ddev push [env]` | One-time initial deployment of local DB and Files to a remote server. |
+| `ddev auth ssh` | Authenticates your SSH key with the DDEV web container (required for pull/push). |
 
-# Pull from staging or live
-ddev pull stage
-ddev pull live
-```
-*On the first run, you will be prompted to enter SSH and Database credentials interactively.*
+## 📁 Configuration
+
+Configuration is split into two files per environment to ensure security:
+- `.env.{env}`: Shared settings (SSH Host, Paths, DB Names). **Safe to commit.**
+- `.env.{env}.local`: Private secrets (SSH Ports, DB Passwords, ACF Keys). **Ignored by Git.**
+
+## 📖 What it Does
+
+### Scaffolding & WordPress Setup
+The plugin automates the repetitive "day 0" tasks. It downloads WordPress, sets up the `wp-config.php` for DDEV, and can clone the company's master theme and block plugins. It also handles the installation of **ACF Pro** using an environment-stored license key.
+
+### Data Synchronization (`ddev pull`)
+Uses a high-performance "streaming" approach. It executes `mysqldump` on the remote server and pipes the output directly into the DDEV database, performing domain replacements on the fly. It then uses `rsync` to pull down media files and translations.
+
+### Initial Deployment (`ddev push`)
+Provides a safe way to perform the first deployment to a new server. It exports your local database, replaces your local `.ddev.site` domain with the remote production domain, and uploads everything via SSH.
+
+### GitHub Deployments
+Generates ready-to-use `.github/workflows/deploy-{env}.yml` files. These workflows are configured to deploy specific branches to specific servers using `rsync`, with support for environment-specific secrets.
 
 ---
-
-## What it does
-
-This add-on streamlines the WordPress development workflow by handling:
-
-*   **Environment Syncing**: Securely pulls databases and files from remote servers via SSH. It automatically replaces domains in the database during import.
-*   **Configuration Management**: Uses a split-configuration strategy:
-    *   **Shared Config** (`.env.dev`): Stores non-sensitive data (host, paths, users). Committed to Git.
-    *   **Secret Config** (`.env.dev.local`): Stores passwords. **Ignored** by Git.
-*   **WordPress Installation**: Provides a wizard to download and install WordPress core and themes.
-*   **Deployment**: Generates a GitHub Actions workflow to deploy your code to remote servers using `rsync`.
-*   **Smart Ignoring**: Automatically generates a `.gitignore` optimized for this workflow.
-
----
-
-## Manual Setup (File Explanation)
-
-If you prefer to configure this manually without the add-on, you can copy the files from the `examples/` directory in this repository to your project.
-
-### Key Files & Structure
-
-1.  **`.ddev/providers/*.yaml`** (`dev.yaml`, `stage.yaml`, `live.yaml`)
-    *   Defines the `ddev pull <env>` commands.
-    *   Example: `dev.yaml` maps the `pull dev` command to the script that handles the logic.
-
-2.  **`.ddev/providers/pull_script.sh`**
-    *   The core logic script. It handles:
-        *   Loading credentials from `.env.<env>` files.
-        *   Dumping the remote database via SSH.
-        *   Syncing files via `rsync`.
-        *   Replacing database domains.
-
-3.  **`.ddev/providers/ensure_env_config.sh`**
-    *   A helper script that checks if your `.env` files exist and prompts you for credentials if they are missing.
-
-4.  **`.ddev/commands/host/setup`**
-    *   The `ddev setup` command script. Orchestrates the entire setup process (Config -> Deployment -> WordPress).
-
-5.  **`.github/workflows/deploy.yml`**
-    *   A GitHub Actions workflow file.
-    *   It uses `rsync` to deploy your code to the server defined in your repository secrets (`SSH_HOST`, `SSH_USER`, `SSH_KEY`).
-
-### Manual Installation Steps
-1.  Copy the contents of `examples/.ddev` to your project's `.ddev` folder.
-2.  Copy `examples/.github` to your project root (if you want deployment).
-3.  Copy `examples/.gitignore` to your project root.
-4.  Run `ddev restart` to register the new commands.
+*Maintained by d-mind GmbH*
