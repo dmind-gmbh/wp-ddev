@@ -124,12 +124,23 @@ if [ -z "${SSH_PORT:-}" ]; then
     VARS_UPDATED=true
 fi
 
-ensure_var "SERVER_ROOT" "Enter Remote Server Root Path:"
-ensure_var "DATA_DIR" "Enter Remote Data Directory (relative to root, usually /):"
+ensure_var "SERVER_ROOT" "Enter Remote Server Base Path (Absolute, e.g. /var/www/vhosts/example.com):"
+ensure_var "DATA_DIR" "Enter Project Subdirectory relative to Base Path (e.g. / or /httpdocs):"
 ensure_var "DB_NAME" "Enter Remote Database Name:"
 ensure_var "DB_HOST" "Enter Remote Database Host:"
 ensure_var "DB_USER" "Enter Remote Database User:"
 ensure_var "DB_PASSWORD" "Enter Remote Database Password:" true
+
+# Optional Plugin Settings
+if [ -z "${ACF_PRO_KEY:-}" ]; then
+    echo -n "Enter ACF Pro License Key (optional, press Enter to skip): " > /dev/tty
+    read -r ACF_KEY < /dev/tty
+    if [ -n "$ACF_KEY" ]; then
+        export ACF_PRO_KEY="$ACF_KEY"
+        update_env "$ENV_FILE_SECRETS" "ACF_PRO_KEY" "$ACF_KEY" "ACF Pro License Key"
+        VARS_UPDATED=true
+    fi
+fi
 
 if [ -z "${SOURCE_DOMAINS:-}" ]; then
     echo -e "${YELLOW}Source Domains not configured.${NC}" > /dev/tty
