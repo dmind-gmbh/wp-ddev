@@ -135,6 +135,16 @@ if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
             fi
         fi
 
+        # 0.1 Ensure Placement Anchor exists for wp-cli
+        if ! grep -q "That's all, stop editing!" "$WP_CONFIG_PATH"; then
+            log "${BLUE}Fixing missing placement anchor for wp-cli...${NC}"
+            if grep -q "require_once ABSPATH . 'wp-settings.php'" "$WP_CONFIG_PATH"; then
+                sed -i "/require_once ABSPATH . 'wp-settings.php'/i \/* That's all, stop editing! Happy publishing. *\/\n" "$WP_CONFIG_PATH"
+            else
+                echo -e "\n/* That's all, stop editing! Happy publishing. */" >> "$WP_CONFIG_PATH"
+            fi
+        fi
+
         # 1. Force Local DB Credentials to 'db'
         # Redirect wp-cli output to stderr
         WP_PATH_ARG="--path=${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}"

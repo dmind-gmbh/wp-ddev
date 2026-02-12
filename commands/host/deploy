@@ -130,6 +130,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', __DIR__ . '/' );
 }
 
+/* That's all, stop editing! Happy publishing. */
+
 require_once ABSPATH . 'wp-settings.php';
 CONFIG
 EOF
