@@ -170,6 +170,34 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
         fi
     fi
     
+    # 1.6 Finalize wp-config.php (Un-manage from DDEV)
+    echo -e "\n${BLUE}>> Step 1.6: Finalizing wp-config.php${NC}"
+    # Use path relative to host for file ops, but wp-cli needs container path
+    WPC_PATH="${DOCROOT}wp-config.php"
+    
+    if [ -f "$WPC_PATH" ]; then
+        echo "Taking control of wp-config.php..."
+        
+        # Remove DDEV inclusion block
+        # We look for the start marker and delete until the end of the if block
+        sed -i "/Include for settings managed by ddev/,/}/d" "$WPC_PATH"
+        
+        # Explicitly set DDEV credentials in wp-config.php (since ddev-config is gone)
+        # We use wp-cli inside ddev to be safe
+        # Normalize DOCROOT for wp-cli path
+        WP_IN_CONTAINER_PATH="/var/www/html/${DOCROOT%/}"
+        ddev wp config set DB_NAME "db" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        ddev wp config set DB_USER "db" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        ddev wp config set DB_PASSWORD "db" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        ddev wp config set DB_HOST "db" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        ddev wp config set WP_HOME "$PROJECT_URL" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        ddev wp config set WP_SITEURL "${PROJECT_URL}/" --path="$WP_IN_CONTAINER_PATH" --type=constant
+        
+        # Delete the redundant ddev file
+        rm -f "${DOCROOT}wp-config-ddev.php"
+        echo "wp-config-ddev.php removed and main config updated."
+    fi
+
     echo -e "${GREEN}WordPress installation and plugin setup complete!${NC}"
 else
     echo "Skipping WordPress installation."

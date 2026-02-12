@@ -107,35 +107,41 @@ rsync "${RSYNC_PUSH_ARGS[@]}" "${LOCAL_ROOT}/" "${SSH_USER}@${SSH_HOST}:${SERVER
 
 # 3. Handle Remote wp-config.php
 echo -e "\n${BLUE}>> Phase 3: Remote Configuration${NC}"
-echo -n "Do you want to generate/update the remote wp-config.php? [y/N] "
+echo -n "Do you want to patch and upload your local wp-config.php to remote? [y/N] "
 read -r GEN_CONFIG
 if [[ "$GEN_CONFIG" =~ ^[Yy]$ ]]; then
-    echo "Generating remote wp-config.php..."
-    # We create a minimal wp-config.php on the remote using a quoted HEREDOC to prevent variable expansion
-    ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" "bash -s" <<EOF
-cat > "${SERVER_ROOT}${DATA_DIR}/wp-config.php" <<'CONFIG'
-<?php
-define( 'DB_NAME', '${DB_NAME}' );
-define( 'DB_USER', '${DB_USER}' );
-define( 'DB_PASSWORD', '${DB_PASSWORD}' );
-define( 'DB_HOST', '${DB_HOST}' );
-define( 'DB_CHARSET', 'utf8' );
-define( 'DB_COLLATE', '' );
+    echo "Preparing wp-config.php for remote..."
+    LOCAL_WPC="${LOCAL_ROOT}/wp-config.php"
+    TEMP_WPC=".ddev/.downloads/wp-config.php.remote"
+    
+    if [ ! -f "$LOCAL_WPC" ]; then
+        echo -e "${RED}Error: Local wp-config.php not found at ${LOCAL_WPC}${NC}"
+    else
+        cp "$LOCAL_WPC" "$TEMP_WPC"
+        
+        # 3.1 Strip DDEV inclusion block if it still exists
+        sed -i "/Include for settings managed by ddev/,/}/d" "$TEMP_WPC"
+        
+        # 3.2 Swap DDEV values for Remote values
+        # We use different delimiters | to avoid issues with URLs containing /
+        sed -i "s/define(\s*'DB_NAME'\s*,\s*'db'\s*);/define( 'DB_NAME', '${DB_NAME}' );/" "$TEMP_WPC"
+        sed -i "s/define(\s*'DB_USER'\s*,\s*'db'\s*);/define( 'DB_USER', '${DB_USER}' );/" "$TEMP_WPC"
+        sed -i "s/define(\s*'DB_PASSWORD'\s*,\s*'db'\s*);/define( 'DB_PASSWORD', '${DB_PASSWORD}' );/" "$TEMP_WPC"
+        sed -i "s/define(\s*'DB_HOST'\s*,\s*'db'\s*);/define( 'DB_HOST', '${DB_HOST}' );/" "$TEMP_WPC"
+        
+        # Site URLs
+        PROJECT_URL=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4)
+        REMOTE_URL=$(echo "https://${DEST_DOMAIN}" | sed 's|/*$||') # Remove trailing slash for consistency
+        
+        sed -i "s|define(\s*'WP_HOME'\s*,\s*'${PROJECT_URL}'\s*);|define( 'WP_HOME', '${REMOTE_URL}' );|" "$TEMP_WPC"
+        sed -i "s|define(\s*'WP_SITEURL'\s*,\s*'${PROJECT_URL}/'\s*);|define( 'WP_SITEURL', '${REMOTE_URL}/' );|" "$TEMP_WPC"
 
-\$table_prefix = 'wp_';
-
-define( 'WP_DEBUG', false );
-
-if ( ! defined( 'ABSPATH' ) ) {
-	define( 'ABSPATH', __DIR__ . '/' );
-}
-
-/* That's all, stop editing! Happy publishing. */
-
-require_once ABSPATH . 'wp-settings.php';
-CONFIG
-EOF
-    echo -e "${GREEN}Remote wp-config.php created.${NC}"
+        echo "Uploading patched wp-config.php..."
+        rsync -az -e "ssh -p ${SSH_PORT:-22}" "$TEMP_WPC" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-config.php"
+        rm "$TEMP_WPC"
+        
+        echo -e "${GREEN}Remote wp-config.php updated (Salts and custom constants preserved).${NC}"
+    fi
 fi
 
 echo -e "\n${GREEN}Deployment to ${ENV_NAME} successful!${NC}"

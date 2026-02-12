@@ -157,16 +157,14 @@ if [[ "$MODE" == "all" || "$MODE" == "files" ]]; then
         wp config set WP_HOME "$DDEV_PRIMARY_URL" "$WP_PATH_ARG" --type=constant >&2
         wp config set WP_SITEURL "${DDEV_PRIMARY_URL}/" "$WP_PATH_ARG" --type=constant >&2
 
-        # 2. Ensure DDEV settings inclusion if missing
-        if ! grep -q "wp-config-ddev.php" "$WP_CONFIG_PATH"; then
-            log "${BLUE}Injecting DDEV settings inclusion...${NC}"
-            # Insert before the "stop editing" line or at the end
-            if grep -q "That's all, stop editing!" "$WP_CONFIG_PATH"; then
-                sed -i "/That's all, stop editing!/i // Include for settings managed by ddev.\n\$ddev_settings = __DIR__ . '/wp-config-ddev.php';\nif ( ! defined( 'DB_USER' ) && getenv( 'IS_DDEV_PROJECT' ) == 'true' && is_readable( \$ddev_settings ) ) {\n\trequire_once( \$ddev_settings );\n}\n" "$WP_CONFIG_PATH"
-            else
-                echo -e "\n// Include for settings managed by ddev.\n\$ddev_settings = __DIR__ . '/wp-config-ddev.php';\nif ( ! defined( 'DB_USER' ) && getenv( 'IS_DDEV_PROJECT' ) == 'true' && is_readable( \$ddev_settings ) ) {\n\trequire_once( \$ddev_settings );\n}" >> "$WP_CONFIG_PATH"
-            fi
+        # 2. Cleanup: Remove DDEV settings inclusion (we are un-managed)
+        if grep -q "Include for settings managed by ddev" "$WP_CONFIG_PATH"; then
+            log "${BLUE}Removing legacy DDEV inclusion block...${NC}"
+            sed -i "/Include for settings managed by ddev/,/}/d" "$WP_CONFIG_PATH"
         fi
+        
+        # Remove redundant file if it exists
+        rm -f "${DDEV_COMPOSER_ROOT:-/var/www/html}/${DDEV_DOCROOT}/wp-config-ddev.php"
     fi
     
     # Create a dummy tarball to satisfy DDEV requirement for files_pull_command
