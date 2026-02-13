@@ -193,6 +193,23 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
             echo "disable_settings_management: true" >> .ddev/config.yaml
         fi
 
+        # Ensure table prefix is preserved before we detach from DDEV management
+        if ! grep -q "\$table_prefix" "$WPC_PATH"; then
+            DDEV_WPC="${DOCROOT}wp-config-ddev.php"
+            if [ -f "$DDEV_WPC" ]; then
+                echo "Extracting table prefix from ddev settings..."
+                # Get the line, clean whitespace
+                PREFIX_LINE=$(grep "\$table_prefix" "$DDEV_WPC" | head -n 1 | sed 's/^[ \t]*//;s/[ \t]*$//')
+                if [ -n "$PREFIX_LINE" ]; then
+                    sed -i "/<?php/a $PREFIX_LINE" "$WPC_PATH"
+                else
+                    sed -i "/<?php/a \$table_prefix = 'wp_';" "$WPC_PATH"
+                fi
+            else
+                sed -i "/<?php/a \$table_prefix = 'wp_';" "$WPC_PATH"
+            fi
+        fi
+
         # Remove DDEV inclusion block
         # We look for the start marker and delete until the end of the if block
         sed -i "/Include for settings managed by ddev/,/}/d" "$WPC_PATH"
