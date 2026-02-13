@@ -60,13 +60,3 @@ pre_install_actions:
     migrate_env "dev" "dev.yaml" "development.yaml" "old.yaml"
     migrate_env "stage" "stage.yaml" "staging.yaml" "preview.yaml"
     migrate_env "live" "live.yaml" "prod.yaml" "production.yaml"
-
-post_install_actions:
-  - |
-    # Disable DDEV automatic settings management for WordPress
-    if grep -q "disable_settings_management: false" .ddev/config.yaml; then
-        sed -i "s/disable_settings_management: false/disable_settings_management: true/" .ddev/config.yaml
-    elif ! grep -q "disable_settings_management: true" .ddev/config.yaml; then
-        echo "disable_settings_management: true" >> .ddev/config.yaml
-    fi
-    echo "DDEV settings management disabled to allow custom wp-config.php handling."

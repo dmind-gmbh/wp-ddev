@@ -36,6 +36,14 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     echo "Configuring .ddev/config.yaml for WordPress..."
     sed -i 's/^type:.*$/type: wordpress/' .ddev/config.yaml
     
+    # Disable DDEV automatic settings management to allow custom wp-config.php handling
+    if grep -q "^disable_settings_management: false" .ddev/config.yaml; then
+        sed -i 's/^disable_settings_management: false/disable_settings_management: true/' .ddev/config.yaml
+    elif ! grep -q "^disable_settings_management: true" .ddev/config.yaml; then
+        echo "disable_settings_management: true" >> .ddev/config.yaml
+    fi
+    echo "Disabled DDEV automatic settings management."
+
     # Check if upload_dirs is already set
     if ! grep -q "^upload_dirs:" .ddev/config.yaml; then
         echo 'upload_dirs: ["dummy_uploads"]' >> .ddev/config.yaml
@@ -178,6 +186,13 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
     if [ -f "$WPC_PATH" ]; then
         echo "Taking control of wp-config.php..."
         
+        # Ensure DDEV settings management is definitely disabled
+        if grep -q "^disable_settings_management: false" .ddev/config.yaml; then
+            sed -i "s/^disable_settings_management: false/disable_settings_management: true/" .ddev/config.yaml
+        elif ! grep -q "^disable_settings_management: true" .ddev/config.yaml; then
+            echo "disable_settings_management: true" >> .ddev/config.yaml
+        fi
+
         # Remove DDEV inclusion block
         # We look for the start marker and delete until the end of the if block
         sed -i "/Include for settings managed by ddev/,/}/d" "$WPC_PATH"

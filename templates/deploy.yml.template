@@ -1,5 +1,5 @@
 #ddev-generated
-name: 🚀 Deploy via rsync
+name: 🚀 Deploy to {{ENV_NAME}}
 
 on:
   push:
@@ -7,9 +7,8 @@ on:
       - main
 jobs:
   deploy:
-    name: 🚀 Deploy to server
+    name: 🚀 Deploy to {{ENV_NAME}}
     runs-on: ubuntu-latest
-    # environment: {{ENVIRONMENT_NAME}} # Uncomment and set if using GitHub Environments
     env:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
