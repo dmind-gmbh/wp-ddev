@@ -10,9 +10,10 @@ jobs:
     name: 🚀 Deploy to {{ENV_NAME}}
     runs-on: ubuntu-latest
     env:
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USER }}
-      DEST: "{{DESTINATION_PATH}}"
+      SSH_HOST: ${{ secrets.SSH_HOST || '{{HARDCODED_HOST}}' }}
+      SSH_USER: ${{ secrets.SSH_USER || '{{HARDCODED_USER}}' }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '{{HARDCODED_PORT}}' }}
+      DEST: ${{ secrets.SSH_DEST || '{{DESTINATION_PATH}}' }}
 
     steps:
       - name: 📥 Checkout repository
@@ -20,18 +21,12 @@ jobs:
 
       - name: 🔍 Check Secrets
         run: |
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "::error::Secret SSH_HOST is not set or empty. Please check your Repository Secrets."
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_USER }}" ]; then
-            echo "::error::Secret SSH_USER is not set or empty. Please check your Repository Secrets."
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_KEY }}" ]; then
+          if [ -z "$SSH_KEY" ]; then
             echo "::error::Secret SSH_KEY is not set or empty. Please check your Repository Secrets."
             exit 1
           fi
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
 
       - name: 🪪 Set SSH connection
         run: |
@@ -40,13 +35,17 @@ jobs:
           chmod 600 ~/.ssh/deploy.key
           cat >>~/.ssh/config <<END
           Host remote
-            HostName ${{ secrets.SSH_HOST }}
-            User ${{ secrets.SSH_USER }}
+            HostName $SSH_HOST
+            User $SSH_USER
+            Port $SSH_PORT
             IdentityFile ~/.ssh/deploy.key
             StrictHostKeyChecking no
           END
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ env.SSH_HOST }}
+          SSH_USER: ${{ env.SSH_USER }}
+          SSH_PORT: ${{ env.SSH_PORT }}
 
       - name: 🚀 Sync files
         run: |

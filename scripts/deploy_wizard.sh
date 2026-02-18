@@ -48,12 +48,16 @@ echo -n "Trigger deployment on push to branch [${DEFAULT_BRANCH}]: " > /dev/tty
 read -r BRANCH_NAME < /dev/tty
 BRANCH_NAME=${BRANCH_NAME:-$DEFAULT_BRANCH}
 
-# 3. Path Detection
+# 3. Path and SSH Detection
 DOCROOT=$(grep "^docroot:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
 LOCAL_ROOT="${DOCROOT:-.}"
 LOCAL_ROOT="${LOCAL_ROOT%/}"
 
 DEST_PATH=""
+SSH_HOST=""
+SSH_USER=""
+SSH_PORT=""
+
 if [ -f ".env.${ENV_NAME}" ]; then
     S_ROOT=$(grep "^SERVER_ROOT=" ".env.${ENV_NAME}" | cut -d'"' -f2)
     D_DIR=$(grep "^DATA_DIR=" ".env.${ENV_NAME}" | cut -d'"' -f2)
@@ -67,10 +71,29 @@ if [ -f ".env.${ENV_NAME}" ]; then
             DEST_PATH="${S_ROOT}"
         fi
     fi
+    SSH_HOST=$(grep "^SSH_HOST=" ".env.${ENV_NAME}" | cut -d'"' -f2)
+    SSH_USER=$(grep "^SSH_USER=" ".env.${ENV_NAME}" | cut -d'"' -f2)
+    SSH_PORT=$(grep "^SSH_PORT=" ".env.${ENV_NAME}" | cut -d'"' -f2)
+fi
+
+if [ -z "$SSH_HOST" ]; then
+    echo -n "Enter REMOTE SSH Host (e.g. example.com): " > /dev/tty
+    read -r SSH_HOST < /dev/tty
+fi
+
+if [ -z "$SSH_USER" ]; then
+    echo -n "Enter REMOTE SSH User: " > /dev/tty
+    read -r SSH_USER < /dev/tty
+fi
+
+if [ -z "$SSH_PORT" ]; then
+    echo -n "Enter REMOTE SSH Port [22]: " > /dev/tty
+    read -r SSH_PORT < /dev/tty
+    SSH_PORT=${SSH_PORT:-22}
 fi
 
 if [ -z "$DEST_PATH" ]; then
-    echo -e "\n${YELLOW}Remote SERVER_ROOT not found in .env.${ENV_NAME}.${NC}" > /dev/tty
+    echo -e "\n${YELLOW}Remote destination path not found in .env.${ENV_NAME}.${NC}" > /dev/tty
     echo -n "Enter absolute remote destination path: " > /dev/tty
     read -r DEST_PATH < /dev/tty
 fi
@@ -110,9 +133,8 @@ while true; do
     echo "          rsync -avO \\" >> "$STEPS_FILE"
     echo "            --exclude /.git/ \\" >> "$STEPS_FILE"
     echo "            --exclude /.github/ \\" >> "$STEPS_FILE"
-    echo "            -e \"ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy.key\" \\" >> "$STEPS_FILE"
     echo "            ./${SRC_PATH} \\" >> "$STEPS_FILE"
-    echo "            \${{ env.SSH_USER }}@\${{ env.SSH_HOST }}:\${{ env.DEST }}/${DEST_REL}" >> "$STEPS_FILE"
+    echo "            remote:\${{ env.DEST }}/${DEST_REL}" >> "$STEPS_FILE"
     echo "" >> "$STEPS_FILE"
 done
 
@@ -129,22 +151,28 @@ if [ -f "$TEMPLATE_FILE" ]; then
     cp "$TEMPLATE_FILE" "$DEPLOY_FILE"
     
     # Replace variables
-    export ENV_NAME BRANCH_NAME DEST_PATH SUFFIX
-    perl -i -pe "s|\{\{ENV_NAME\}\}|$ENV{ENV_NAME}|g" "$DEPLOY_FILE"
+    perl -i -pe "s|\{\{ENV_NAME\}\}|$ENV_NAME|g" "$DEPLOY_FILE"
     perl -i -pe 's|branches:.*|branches:|g' "$DEPLOY_FILE"
     perl -i -pe 's|- main|- '"$BRANCH_NAME"'|g' "$DEPLOY_FILE"
-    perl -i -pe 's|\{\{DESTINATION_PATH\}\}|$ENV{DEST_PATH}|g' "$DEPLOY_FILE"
     
-    # Replace secrets with suffixed versions across the whole file
+    # Replace hardcoded values and secrets with suffixed versions
     perl -i -pe "s|secrets\.SSH_HOST|secrets.SSH_HOST$SUFFIX|g" "$DEPLOY_FILE"
     perl -i -pe "s|secrets\.SSH_USER|secrets.SSH_USER$SUFFIX|g" "$DEPLOY_FILE"
+    perl -i -pe "s|secrets\.SSH_PORT|secrets.SSH_PORT$SUFFIX|g" "$DEPLOY_FILE"
+    perl -i -pe "s|secrets\.SSH_DEST|secrets.SSH_DEST$SUFFIX|g" "$DEPLOY_FILE"
     perl -i -pe "s|secrets\.SSH_KEY|secrets.SSH_KEY$SUFFIX|g" "$DEPLOY_FILE"
+    
+    perl -i -pe "s|\{\{HARDCODED_HOST\}\}|$SSH_HOST|g" "$DEPLOY_FILE"
+    perl -i -pe "s|\{\{HARDCODED_USER\}\}|$SSH_USER|g" "$DEPLOY_FILE"
+    perl -i -pe "s|\{\{HARDCODED_PORT\}\}|$SSH_PORT|g" "$DEPLOY_FILE"
+    perl -i -pe "s|\{\{DESTINATION_PATH\}\}|$DEST_PATH|g" "$DEPLOY_FILE"
 
     # Insert steps
     sed -i -e "/{{RSYNC_STEPS}}/r $STEPS_FILE" -e '//d' "$DEPLOY_FILE"
     
     echo -e "\n✅ Created $DEPLOY_FILE" > /dev/tty
-    echo -e "⚠️  Ensure these Repository Secrets are set in GitHub: SSH_HOST$SUFFIX, SSH_USER$SUFFIX, SSH_KEY$SUFFIX" > /dev/tty
+    echo -e "⚠️  Ensure at least this Repository Secret is set in GitHub: SSH_KEY$SUFFIX" > /dev/tty
+    echo -e "ℹ️  Optional overrides: SSH_HOST$SUFFIX, SSH_USER$SUFFIX, SSH_PORT$SUFFIX, SSH_DEST$SUFFIX" > /dev/tty
 else
     echo "Error: Template not found." > /dev/tty
 fi
