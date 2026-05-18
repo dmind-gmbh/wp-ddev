@@ -6,7 +6,7 @@ A comprehensive DDEV add-on for scaffolding WordPress projects, syncing data fro
 
 ### 1. Install the Add-on
 ```bash
-ddev get dmind-gmbh/ddev-pull-plugin
+ddev add-on get dmind-gmbh/wp-ddev
 ```
 
 ### 2. Run the Setup Wizard
