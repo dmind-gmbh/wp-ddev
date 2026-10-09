@@ -57,21 +57,6 @@ echo -e "Exporting local database..."
 mkdir -p .ddev/.downloads
 ddev export-db -f .ddev/.downloads/local_deploy.sql.gz
 
-# Search and replace
-DEST_DOMAIN=$(echo "${SOURCE_DOMAINS:-}" | cut -d',' -f1 | xargs)
-if [ -z "$DEST_DOMAIN" ]; then
-    echo -e "${YELLOW}No source domain configured for replacement. Searching for production domain...${NC}"
-    echo -n "Enter the remote domain (e.g. example.com): "
-    read -r DEST_DOMAIN
-fi
-
-if [ -n "$DEST_DOMAIN" ]; then
-    DDEV_HOSTNAME=$(grep "^name:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'").ddev.site
-    echo -e "Replacing ${DDEV_HOSTNAME} with ${DEST_DOMAIN} in dump..."
-    gunzip -c .ddev/.downloads/local_deploy.sql.gz | sed "s/${DDEV_HOSTNAME}/${DEST_DOMAIN}/g" | gzip > .ddev/.downloads/local_deploy_replaced.sql.gz
-    mv .ddev/.downloads/local_deploy_replaced.sql.gz .ddev/.downloads/local_deploy.sql.gz
-fi
-
 echo -e "Uploading and importing to remote..."
 rsync -az -e "ssh -p ${SSH_PORT:-22}" .ddev/.downloads/local_deploy.sql.gz "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}/deploy_db.sql.gz"
 
@@ -81,7 +66,42 @@ gunzip -c "${SERVER_ROOT}/deploy_db.sql.gz" | mysql -u'${DB_USER}' -h'${DB_HOST}
 rm "${SERVER_ROOT}/deploy_db.sql.gz"
 EOF
 
-echo -e "${GREEN}Database deployment complete!${NC}"
+# 1.1 Remote Search and Replace (Safe for Serialized Data)
+echo -e "Performing remote domain replacement (Zero-Disk-Footprint)..."
+DEST_DOMAIN=$(echo "${SOURCE_DOMAINS:-}" | cut -d',' -f1 | xargs)
+PRIMARY_HOSTNAME=$(ddev describe -j | grep -o '"primary_url":"[^"]*"' | cut -d'"' -f4 | sed 's|https://||;s|http://||;s|/||g')
+REMOTE_PATH="${SERVER_ROOT%/}/${DATA_DIR#/}"
+REMOTE_PATH="${REMOTE_PATH%/}"
+
+# Function to run remote wp-cli
+run_remote_wp() {
+    local args="$@"
+    # Stream the local wp-cli phar to remote php
+    ddev ssh -c "cat /usr/local/bin/wp" | ssh -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" "php -- --path='$REMOTE_PATH' $args"
+}
+
+# Standard replacement
+if [ -n "$DEST_DOMAIN" ] && [ -n "$PRIMARY_HOSTNAME" ]; then
+    echo -e "Replacing ${PRIMARY_HOSTNAME} with ${DEST_DOMAIN}..."
+    run_remote_wp search-replace "$PRIMARY_HOSTNAME" "$DEST_DOMAIN" --network --skip-columns=guid > /dev/null
+fi
+
+# Multi-site mapping replacement (reversed: local -> remote)
+if [ -n "${DOMAIN_MAPPING:-}" ]; then
+    echo -e "Applying multisite domain mappings..."
+    IFS=',' read -ra MAPPINGS <<< "$DOMAIN_MAPPING"
+    for mapping in "${MAPPINGS[@]}"; do
+        mapping=$(echo "$mapping" | xargs)
+        if [ -n "$mapping" ]; then
+            REMOTE_D=$(echo "$mapping" | cut -d':' -f1)
+            LOCAL_D=$(echo "$mapping" | cut -d':' -f2)
+            echo -e "Mapping $LOCAL_D -> $REMOTE_D..."
+            run_remote_wp search-replace "$LOCAL_D" "$REMOTE_D" --network --skip-columns=guid > /dev/null
+        fi
+    done
+fi
+
+echo -e "${GREEN}Database deployment and replacement complete!${NC}"
 
 # 2. Deploy Files
 echo -e "\n${BLUE}>> Phase 2: Files Deployment${NC}"
@@ -135,6 +155,21 @@ if [[ "$GEN_CONFIG" =~ ^[Yy]$ ]]; then
         
         sed -i "s|define(\s*'WP_HOME'\s*,\s*'${PROJECT_URL}'\s*);|define( 'WP_HOME', '${REMOTE_URL}' );|" "$TEMP_WPC"
         sed -i "s|define(\s*'WP_SITEURL'\s*,\s*'${PROJECT_URL}/'\s*);|define( 'WP_SITEURL', '${REMOTE_URL}/' );|" "$TEMP_WPC"
+
+        # 3.3 Multisite Constants for Remote
+        if [[ "${IS_MULTISITE:-false}" == "true" ]]; then
+            echo "Applying Multisite constants for remote..."
+            
+            # Update DOMAIN_CURRENT_SITE to the remote domain
+            sed -i "s|define(\s*'DOMAIN_CURRENT_SITE'\s*,\s*'${DDEV_HOSTNAME}'\s*);|define( 'DOMAIN_CURRENT_SITE', '${DEST_DOMAIN}' );|" "$TEMP_WPC"
+            
+            # Ensure other constants are properly set
+            if grep -q "define(\s*'SUBDOMAIN_INSTALL'\s*,\s*false\s*);" "$TEMP_WPC"; then
+                 [ "${MULTISITE_TYPE:-subdirectory}" == "subdomain" ] && sed -i "s|define(\s*'SUBDOMAIN_INSTALL'\s*,\s*false\s*);|define( 'SUBDOMAIN_INSTALL', true );|" "$TEMP_WPC"
+            elif grep -q "define(\s*'SUBDOMAIN_INSTALL'\s*,\s*true\s*);" "$TEMP_WPC"; then
+                 [ "${MULTISITE_TYPE:-subdirectory}" == "subdirectory" ] && sed -i "s|define(\s*'SUBDOMAIN_INSTALL'\s*,\s*true\s*);|define( 'SUBDOMAIN_INSTALL', false );|" "$TEMP_WPC"
+            fi
+        fi
 
         echo "Uploading patched wp-config.php..."
         rsync -az -e "ssh -p ${SSH_PORT:-22}" "$TEMP_WPC" "${SSH_USER}@${SSH_HOST}:${SERVER_ROOT}${DATA_DIR}/wp-config.php"

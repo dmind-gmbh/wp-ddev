@@ -138,6 +138,33 @@ if [ -z "${SOURCE_DOMAINS:-}" ]; then
     VARS_UPDATED=true
 fi
 
+echo -e "\n${BLUE}--- Multisite Handling ---${NC}"
+if [ -z "${IS_MULTISITE:-}" ]; then
+    echo -n "Is this a WordPress Multisite installation? [y/N]: " > /dev/tty
+    read -r INPUT_MS < /dev/tty
+    if [[ "$INPUT_MS" =~ ^[Yy]$ ]]; then
+        IS_MULTISITE="true"
+        update_env "$ENV_FILE" "IS_MULTISITE" "true" "Enable multisite logic"
+        
+        echo -n "Multisite type: (1) Sub-directory, (2) Sub-domain [1]: " > /dev/tty
+        read -r MS_TYPE_OPT < /dev/tty
+        if [ "$MS_TYPE_OPT" == "2" ]; then
+            update_env "$ENV_FILE" "MULTISITE_TYPE" "subdomain" "Type of multisite"
+        else
+            update_env "$ENV_FILE" "MULTISITE_TYPE" "subdirectory" "Type of multisite"
+        fi
+
+        echo -n "Enter domain mappings (remote:local) comma-separated (e.g. site1.com:site1.ddev.site,site2.com:site2.ddev.site): " > /dev/tty
+        read -r INPUT_MAPPING < /dev/tty
+        if [ -n "$INPUT_MAPPING" ]; then
+            update_env "$ENV_FILE" "DOMAIN_MAPPING" "$INPUT_MAPPING" "Specific mappings for multisite sub-sites"
+        fi
+    else
+        update_env "$ENV_FILE" "IS_MULTISITE" "false" "Enable multisite logic"
+    fi
+    VARS_UPDATED=true
+fi
+
 # Optional Plugin Settings
 if [ -z "${ACF_PRO_KEY:-}" ]; then
     echo -n "Enter ACF Pro License Key (optional, press Enter to skip): " > /dev/tty

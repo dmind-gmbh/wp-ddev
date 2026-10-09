@@ -230,6 +230,51 @@ if [[ "$INSTALL_WP" =~ ^[Yy]$ ]]; then
         echo "wp-config-ddev.php removed and main config updated."
     fi
 
+    # 1.7 Multisite Setup
+    echo -e "\n${BLUE}>> Step 1.7: Multisite Setup${NC}"
+    echo -n "Do you want to enable WordPress Multisite? [y/N] " > /dev/tty
+    read -r IS_MULTISITE < /dev/tty
+    IS_MULTISITE=${IS_MULTISITE:-N}
+
+    if [[ "$IS_MULTISITE" =~ ^[Yy]$ ]]; then
+        echo "Select Multisite type:" > /dev/tty
+        echo "1) Sub-directory (e.g. ${PROJECT_URL}/site1)" > /dev/tty
+        echo "2) Sub-domain (e.g. site1.${PROJECT_URL#*//})" > /dev/tty
+        echo -n "Option [1-2]: " > /dev/tty
+        read -r MS_TYPE_OPT < /dev/tty
+        
+        MS_ARGS=()
+        if [ "$MS_TYPE_OPT" == "2" ]; then
+            MS_ARGS=("--subdomains")
+            echo "Enabling Sub-domain Multisite..."
+            
+            # Update DDEV config for wildcard DNS
+            if ! grep -q "additional_fqdns:" .ddev/config.yaml; then
+                SITENAME=$(grep "^name:" .ddev/config.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+                echo "additional_fqdns: [\"*.${SITENAME}.ddev.site\"]" >> .ddev/config.yaml
+                echo "Added wildcard FQDN to .ddev/config.yaml"
+            fi
+        else
+            echo "Enabling Sub-directory Multisite..."
+        fi
+
+        # Execute multisite conversion
+        WP_IN_CONTAINER_PATH="/var/www/html/${DOCROOT%/}"
+        ddev wp core multisite-convert "${MS_ARGS[@]}" --path="$WP_IN_CONTAINER_PATH" --title="$WP_TITLE"
+        
+        # WP-CLI multisite-convert doesn't always add the constants to wp-config.php if we are un-managed
+        # So we ensure they are there
+        ddev wp config set MULTISITE true --raw --type=constant --path="$WP_IN_CONTAINER_PATH"
+        ddev wp config set SUBDOMAIN_INSTALL "$( [ "$MS_TYPE_OPT" == "2" ] && echo "true" || echo "false" )" --raw --type=constant --path="$WP_IN_CONTAINER_PATH"
+        ddev wp config set DOMAIN_CURRENT_SITE "${PROJECT_URL#*//}" --type=constant --path="$WP_IN_CONTAINER_PATH"
+        ddev wp config set PATH_CURRENT_SITE "/" --type=constant --path="$WP_IN_CONTAINER_PATH"
+        ddev wp config set SITE_ID_CURRENT_SITE 1 --raw --type=constant --path="$WP_IN_CONTAINER_PATH"
+        ddev wp config set BLOG_ID_CURRENT_SITE 1 --raw --type=constant --path="$WP_IN_CONTAINER_PATH"
+        
+        echo -e "${GREEN}Multisite conversion complete.${NC}"
+        [ "$MS_TYPE_OPT" == "2" ] && echo -e "${YELLOW}Note: DDEV might need a restart to apply wildcard DNS changes.${NC}"
+    fi
+
     echo -e "${GREEN}WordPress installation and plugin setup complete!${NC}"
 else
     echo "Skipping WordPress installation."
